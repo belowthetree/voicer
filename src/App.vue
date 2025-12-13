@@ -6,37 +6,6 @@ import { ChatbubbleEllipses, Settings } from '@vicons/ionicons5'
 
 <template>
   <NLayout class="layout">
-    <NLayoutHeader class="header">
-      <div class="logo">
-        <img alt="Voicer logo" src="@/assets/logo.svg" width="32" height="32" />
-        <h1>AI Assistant</h1>
-      </div>
-      
-      <nav>
-        <NSpace>
-          <NButton quaternary circle>
-            <template #icon>
-              <NIcon>
-                <RouterLink to="/" class="nav-icon">
-                  <ChatbubbleEllipses />
-                </RouterLink>
-              </NIcon>
-            </template>
-          </NButton>
-          
-          <NButton quaternary circle>
-            <template #icon>
-              <NIcon>
-                <RouterLink to="/about" class="nav-icon">
-                  <Settings />
-                </RouterLink>
-              </NIcon>
-            </template>
-          </NButton>
-        </NSpace>
-      </nav>
-    </NLayoutHeader>
-    
     <NLayoutContent class="content">
       <RouterView />
     </NLayoutContent>
