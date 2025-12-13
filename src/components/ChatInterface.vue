@@ -1,16 +1,41 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useAppStore } from '../stores'
-import { NInput, NButton, NCard, NSpace, NIcon, NSpin, NAlert, NProgress, NAvatar, NText, NPopover } from 'naive-ui'
-import { Send, Trash, WarningOutline, Copy, Checkmark, Refresh, StopCircle } from '@vicons/ionicons5'
+import { useRemoteStore } from '../stores/remote-store'
+import { 
+  NInput, NButton, NCard, NSpace, NIcon, NSpin, NAlert, NProgress, NAvatar, NText, NPopover,
+  NModal, NForm, NFormItem, NSelect, NSwitch, NDivider, NTag, NGrid, NGi, NInputNumber,
+  NTooltip, NBadge, NScrollbar, NCollapse, NCollapseItem, NList, NListItem, NThing
+} from 'naive-ui'
+import { 
+  Send, Trash, WarningOutline, Copy, Checkmark, Refresh, StopCircle, 
+  Settings, Server, CheckmarkCircleOutline, CloseCircleOutline,
+  Play, Terminal, Code, DocumentText, ArchiveOutline, GlobeOutline, CogOutline, Rocket,
+  ChevronDown, ChevronUp, Reload, TerminalOutline, FlashOutline, StarOutline
+} from '@vicons/ionicons5'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github-dark.css'
 
 const store = useAppStore()
+const remoteStore = useRemoteStore()
 const messageInput = ref('')
 const messageContainer = ref<HTMLElement | null>(null)
 const copiedMessageId = ref<string | null>(null)
+
+// 远程连接配置
+const showRemoteConfig = ref(false)
+const remoteHost = ref('127.0.0.1')
+const remotePort = ref(8080)
+const useTools = ref(true)
+const maxTokens = ref(2000)
+const askBeforeToolExecution = ref(true)
+
+// 命令相关状态
+const showCommandsPanel = ref(false)
+const selectedCommand = ref<string | null>(null)
+const commandParameters = ref<Record<string, any>>({})
+const isSendingCommand = ref(false)
 
 // 配置marked以支持代码高亮
 marked.use({
@@ -44,6 +69,141 @@ const sendMessage = async () => {
   } finally {
     scrollToBottom()
   }
+}
+
+// 连接到远程服务器
+const connectToRemote = async () => {
+  try {
+    await store.connectToRemote()
+  } catch (err) {
+    // 错误已在store中处理
+  }
+}
+
+// 断开远程连接
+const disconnectFromRemote = () => {
+  store.disconnectFromRemote()
+}
+
+// 刷新命令列表
+const refreshCommands = async () => {
+  try {
+    await remoteStore.refreshCommands()
+  } catch (err) {
+    console.error('刷新命令列表失败:', err)
+  }
+}
+
+// 发送命令
+const sendCommand = async (commandName: string, parameters: Record<string, any> = {}) => {
+  if (isSendingCommand.value) return
+  
+  isSendingCommand.value = true
+  try {
+    const response = await remoteStore.sendCommand(commandName, parameters)
+    
+    // 添加命令消息到聊天
+    const commandDisplay = `执行命令: ${commandName}${Object.keys(parameters).length > 0 ? ` (参数: ${JSON.stringify(parameters)})` : ''}`
+    store.addMessage(commandDisplay, true)
+    
+    // 添加响应消息
+    store.addMessage(response, false)
+    
+    // 滚动到底部
+    scrollToBottom()
+  } catch (err: any) {
+    console.error('发送命令失败:', err)
+    // 添加错误消息
+    store.addMessage(`执行命令 ${commandName} 失败: ${err.message}`, false)
+  } finally {
+    isSendingCommand.value = false
+  }
+}
+
+// 快速发送命令（无参数）
+const quickSendCommand = (commandName: string) => {
+  sendCommand(commandName)
+}
+
+// 获取命令图标
+const getCommandIcon = (commandName: string) => {
+  const iconMap: Record<string, any> = {
+    'run': Play,
+    'execute': Terminal,
+    'code': Code,
+    'read': DocumentText,
+    'query': ArchiveOutline,
+    'connect': GlobeOutline,
+    'config': CogOutline,
+    'start': Rocket,
+    'stop': StopCircle,
+    'get': ArchiveOutline,
+    'list': DocumentText,
+    'create': Rocket,
+    'update': Refresh,
+    'delete': Trash
+  }
+  
+  for (const [key, icon] of Object.entries(iconMap)) {
+    if (commandName.toLowerCase().includes(key)) {
+      return icon
+    }
+  }
+  
+  return TerminalOutline
+}
+
+// 获取命令颜色
+const getCommandColor = (commandName: string): 'default' | 'primary' | 'info' | 'success' | 'warning' | 'error' => {
+  const colorMap: Record<string, 'default' | 'primary' | 'info' | 'success' | 'warning' | 'error'> = {
+    'run': 'success',
+    'execute': 'success',
+    'code': 'info',
+    'read': 'info',
+    'query': 'info',
+    'connect': 'warning',
+    'config': 'warning',
+    'start': 'success',
+    'stop': 'error',
+    'get': 'info',
+    'list': 'info',
+    'create': 'success',
+    'update': 'warning',
+    'delete': 'error'
+  }
+  
+  for (const [key, color] of Object.entries(colorMap)) {
+    if (commandName.toLowerCase().includes(key)) {
+      return color
+    }
+  }
+  
+  return 'default'
+}
+
+// 保存远程配置
+const saveRemoteConfig = () => {
+  store.updateRemoteConfig(remoteHost.value, remotePort.value)
+  store.updateRemoteRequestConfig({
+    max_tokens: maxTokens.value,
+    ask_before_tool_execution: askBeforeToolExecution.value
+  })
+  store.updateRemoteUseTools(useTools.value)
+  showRemoteConfig.value = false
+  
+  // 如果已连接，重新连接
+  if (store.isRemoteConnected) {
+    disconnectFromRemote()
+    setTimeout(() => {
+      connectToRemote()
+    }, 500)
+  }
+}
+
+// 打开配置面板
+const openRemoteConfig = () => {
+  // 使用默认值，实际应用中应该从store获取
+  showRemoteConfig.value = true
 }
 
 // 停止生成
@@ -112,10 +272,231 @@ const lastMessageIsUser = computed(() => {
   if (store.messages.length === 0) return false
   return store.messages[store.messages.length - 1].isUser
 })
+
+// 远程连接状态标签
+const remoteStatusTag = computed(() => {
+  if (!store.isRemoteConnected) {
+    return {
+      type: 'error' as const,
+      text: '未连接',
+      icon: CloseCircleOutline
+    }
+  }
+  return {
+    type: 'success' as const,
+    text: store.remoteStatusText,
+    icon: CheckmarkCircleOutline
+  }
+})
+
+// 命令相关计算属性
+const hasCommands = computed(() => remoteStore.hasCommands)
+const commandsCount = computed(() => remoteStore.commandsCount)
+const isLoadingCommands = computed(() => remoteStore.isLoadingCommands)
+const commandsError = computed(() => remoteStore.commandsError)
+const commandsLastUpdated = computed(() => remoteStore.commandsLastUpdated)
+
+// 命令分组（按名称前缀）
+const groupedCommands = computed(() => {
+  const groups: Record<string, any[]> = {}
+  
+  remoteStore.commands.forEach(command => {
+    // 根据命令名称的第一个单词分组
+    const firstWord = command.name.split('_')[0] || 'other'
+    if (!groups[firstWord]) {
+      groups[firstWord] = []
+    }
+    groups[firstWord].push(command)
+  })
+  
+  return Object.entries(groups).map(([groupName, commands]) => ({
+    name: groupName,
+    commands,
+    icon: getCommandIcon(groupName)
+  }))
+})
+
+// 热门命令（前6个）
+const popularCommands = computed(() => {
+  return remoteStore.commands.slice(0, 6)
+})
 </script>
 
 <template>
   <div class="chat-container">
+    <!-- 顶部工具栏 -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <h2 class="app-title">AI 助手</h2>
+      </div>
+      <div class="toolbar-right">
+        <div class="remote-status">
+          <!-- 命令按钮 -->
+          <NTooltip v-if="store.isRemoteConnected && hasCommands" trigger="hover">
+            <template #trigger>
+              <NButton 
+                size="tiny" 
+                @click="showCommandsPanel = !showCommandsPanel"
+                :type="showCommandsPanel ? 'primary' : 'default'"
+                :loading="isLoadingCommands"
+              >
+                <template #icon>
+                  <NIcon :component="TerminalOutline" size="14" />
+                </template>
+                命令 ({{ commandsCount }})
+              </NButton>
+            </template>
+            显示可用命令
+          </NTooltip>
+          
+          <NTag :type="remoteStatusTag.type" size="small" round>
+            <template #icon>
+              <NIcon :component="remoteStatusTag.icon" size="14" />
+            </template>
+            {{ remoteStatusTag.text }}
+          </NTag>
+          <NButton 
+            size="tiny" 
+            @click="store.isRemoteConnected ? disconnectFromRemote() : connectToRemote()"
+            :type="store.isRemoteConnected ? 'warning' : 'primary'"
+            :loading="store.isLoading"
+          >
+            <template #icon>
+              <NIcon :component="store.isRemoteConnected ? CloseCircleOutline : CheckmarkCircleOutline" size="14" />
+            </template>
+            {{ store.isRemoteConnected ? '断开连接' : '连接' }}
+          </NButton>
+          <NButton size="tiny" @click="openRemoteConfig">
+            <template #icon>
+              <NIcon :component="Settings" size="14" />
+            </template>
+            配置
+          </NButton>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 命令面板 -->
+    <div v-if="showCommandsPanel && store.isRemoteConnected" class="commands-panel">
+      <div class="commands-header">
+        <div class="commands-title">
+          <NIcon :component="TerminalOutline" size="18" />
+          <span>可用命令 ({{ commandsCount }})</span>
+          <NTag v-if="commandsLastUpdated" size="small" type="info" round>
+            更新于 {{ commandsLastUpdated }}
+          </NTag>
+        </div>
+        <div class="commands-actions">
+          <NButton 
+            size="tiny" 
+            @click="refreshCommands" 
+            :loading="isLoadingCommands"
+            :disabled="isLoadingCommands"
+          >
+            <template #icon>
+              <NIcon :component="Reload" size="12" />
+            </template>
+            刷新
+          </NButton>
+          <NButton size="tiny" @click="showCommandsPanel = false">
+            <template #icon>
+              <NIcon :component="ChevronUp" size="12" />
+            </template>
+            收起
+          </NButton>
+        </div>
+      </div>
+      
+      <div v-if="commandsError" class="commands-error">
+        <NAlert type="error" :title="commandsError" closable @close="remoteStore.commandsError = ''">
+          <NButton size="small" @click="refreshCommands" :loading="isLoadingCommands">
+            重试
+          </NButton>
+        </NAlert>
+      </div>
+      
+      <div v-else-if="isLoadingCommands" class="commands-loading">
+        <NSpin size="small" />
+        <span>正在加载命令列表...</span>
+      </div>
+      
+      <div v-else-if="!hasCommands" class="commands-empty">
+        <NIcon :component="TerminalOutline" size="48" :depth="3" />
+        <p>暂无可用命令</p>
+        <NButton size="small" @click="refreshCommands">
+          刷新列表
+        </NButton>
+      </div>
+      
+      <NScrollbar v-else style="max-height: 300px;">
+        <!-- 热门命令 -->
+        <div v-if="popularCommands.length > 0" class="commands-section">
+          <div class="section-title">
+            <NIcon :component="FlashOutline" size="16" />
+            <span>热门命令</span>
+          </div>
+          <div class="commands-grid">
+            <div 
+              v-for="command in popularCommands" 
+              :key="command.name"
+              class="command-card"
+              @click="quickSendCommand(command.name)"
+            >
+              <div class="command-icon">
+                <NIcon :component="getCommandIcon(command.name)" size="20" />
+              </div>
+              <div class="command-info">
+                <div class="command-name">{{ command.name }}</div>
+                <div class="command-desc">{{ command.description }}</div>
+              </div>
+              <div class="command-action">
+                <NButton circle size="tiny" :type="getCommandColor(command.name) as any">
+                  <template #icon>
+                    <NIcon :component="Play" size="12" />
+                  </template>
+                </NButton>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 所有命令分组 -->
+        <NCollapse v-if="groupedCommands.length > 0" :default-expanded-names="groupedCommands.map(g => g.name).slice(0, 3)">
+          <NCollapseItem 
+            v-for="group in groupedCommands" 
+            :key="group.name"
+            :name="group.name"
+            :title="group.name.toUpperCase()"
+          >
+            <template #header-extra>
+              <NTag size="small" type="info" round>{{ group.commands.length }}</NTag>
+            </template>
+            <div class="grouped-commands">
+              <div 
+                v-for="command in group.commands" 
+                :key="command.name"
+                class="grouped-command-item"
+                @click="quickSendCommand(command.name)"
+              >
+                <div class="command-item-icon">
+                  <NIcon :component="getCommandIcon(command.name)" size="16" />
+                </div>
+                <div class="command-item-info">
+                  <div class="command-item-name">{{ command.name }}</div>
+                  <div class="command-item-desc">{{ command.description }}</div>
+                </div>
+                <div class="command-item-action">
+                  <NButton text size="tiny" @click.stop="quickSendCommand(command.name)">
+                    执行
+                  </NButton>
+                </div>
+              </div>
+            </div>
+          </NCollapseItem>
+        </NCollapse>
+      </NScrollbar>
+    </div>
+    
     <!-- 消息列表 -->
     <div class="message-list" ref="messageContainer">
       <template v-if="store.messages.length === 0">
@@ -221,7 +602,72 @@ const lastMessageIsUser = computed(() => {
           </template>
         </NAlert>
       </div>
+      
+      <!-- 命令发送状态 -->
+      <div v-if="isSendingCommand" class="command-sending">
+        <div class="sending-indicator">
+          <NSpin size="small" />
+          <span>正在执行命令...</span>
+        </div>
+      </div>
     </div>
+    
+    <!-- 远程配置模态框 -->
+    <NModal v-model:show="showRemoteConfig" preset="card" title="远程服务器配置" style="width: 500px">
+      <NForm label-placement="left" label-width="120px">
+        <NGrid :cols="2" :x-gap="24">
+          <NGi>
+            <NFormItem label="服务器地址">
+              <NInput v-model:value="remoteHost" placeholder="例如: 127.0.0.1" />
+            </NFormItem>
+          </NGi>
+            <NGi>
+            <NFormItem label="端口号">
+              <NInputNumber v-model:value="remotePort" :min="1" :max="65535" />
+            </NFormItem>
+          </NGi>
+        </NGrid>
+        
+        <NDivider />
+        
+        <NFormItem label="最大令牌数">
+          <NInputNumber v-model:value="maxTokens" :min="100" :max="10000" :step="100">
+            <template #suffix>
+              令牌
+            </template>
+          </NInputNumber>
+        </NFormItem>
+        
+        <NFormItem label="使用工具">
+          <NSwitch v-model:value="useTools">
+            <template #checked>
+              启用
+            </template>
+            <template #unchecked>
+              禁用
+            </template>
+          </NSwitch>
+        </NFormItem>
+        
+        <NFormItem label="工具执行前询问">
+          <NSwitch v-model:value="askBeforeToolExecution">
+            <template #checked>
+              是
+            </template>
+            <template #unchecked>
+              否
+            </template>
+          </NSwitch>
+        </NFormItem>
+        
+        <div class="form-actions">
+          <NSpace justify="end">
+            <NButton @click="showRemoteConfig = false">取消</NButton>
+            <NButton type="primary" @click="saveRemoteConfig">保存并应用</NButton>
+          </NSpace>
+        </div>
+      </NForm>
+    </NModal>
     
     <!-- 输入区域 -->
     <div class="input-area">
@@ -287,6 +733,37 @@ const lastMessageIsUser = computed(() => {
   padding: 0;
   box-sizing: border-box;
   background-color: #ffffff;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e5e5e5;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.toolbar-left .app-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.remote-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-actions {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e5e5;
 }
 
 .message-list {
@@ -660,6 +1137,27 @@ const lastMessageIsUser = computed(() => {
     padding: 0;
   }
   
+  .toolbar {
+    padding: 8px 12px;
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+  
+  .toolbar-left, .toolbar-right {
+    width: 100%;
+  }
+  
+  .toolbar-left .app-title {
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  
+  .remote-status {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  
   .message-list {
     padding: 12px;
     gap: 16px;
@@ -712,6 +1210,271 @@ const lastMessageIsUser = computed(() => {
   .message-content :deep(pre) {
     padding: 12px;
     font-size: 13px;
+  }
+}
+
+/* 命令面板样式 */
+.commands-panel {
+  background-color: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  margin: 0 20px 16px 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  animation: slide-down 0.3s ease-out;
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.commands-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: #f9fafb;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.commands-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #374151;
+  font-size: 15px;
+}
+
+.commands-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.commands-error {
+  padding: 12px 16px;
+}
+
+.commands-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: #6b7280;
+}
+
+.commands-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.commands-empty p {
+  margin: 12px 0 16px 0;
+  font-size: 14px;
+}
+
+.commands-section {
+  padding: 16px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-weight: 600;
+  color: #374151;
+  font-size: 14px;
+}
+
+.commands-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.command-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background-color: #f9fafb;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.command-card:hover {
+  background-color: #f3f4f6;
+  border-color: #d1d5db;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.command-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #e5e5e5;
+  flex-shrink: 0;
+}
+
+.command-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.command-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command-desc {
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.command-action {
+  flex-shrink: 0;
+}
+
+.grouped-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.grouped-command-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background-color: #ffffff;
+  border: 1px solid #f3f4f6;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.grouped-command-item:hover {
+  background-color: #f9fafb;
+  border-color: #e5e5e5;
+}
+
+.command-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background-color: #f9fafb;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.command-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.command-item-name {
+  font-weight: 500;
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 2px;
+}
+
+.command-item-desc {
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command-item-action {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.grouped-command-item:hover .command-item-action {
+  opacity: 1;
+}
+
+.command-sending {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+}
+
+.sending-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background-color: #f9fafb;
+  border-radius: 8px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .commands-panel {
+    margin: 0 12px 12px 12px;
+  }
+  
+  .commands-header {
+    padding: 10px 12px;
+  }
+  
+  .commands-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  
+  .command-card {
+    padding: 10px;
+  }
+  
+  .commands-section {
+    padding: 12px;
+  }
+  
+  .grouped-command-item {
+    padding: 8px 10px;
   }
 }
 </style>

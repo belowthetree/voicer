@@ -6,7 +6,13 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
 import { RemoteClient } from '../services/remote-client'
-import type { RemoteClientConfig, RequestConfig, StreamHandler } from '../types/remote-protocol'
+import type { 
+  RemoteClientConfig, 
+  RequestConfig, 
+  StreamHandler,
+  CommandDefinition,
+  CommandListResponse 
+} from '../types/remote-protocol'
 import { ConnectionStatus, RemoteEventType } from '../types/remote-protocol'
 
 export const useRemoteStore = defineStore('remote', () => {
@@ -31,13 +37,21 @@ export const useRemoteStore = defineStore('remote', () => {
   // 请求配置
   const requestConfig = reactive<RequestConfig>({
     max_tokens: 2000,
-    ask_before_tool_execution: true,
-    use_tools: true
+    ask_before_tool_execution: true
   })
+  
+  // 是否使用工具
+  const useTools = ref(true)
   
   // 错误信息
   const error = ref('')
   const lastError = ref('')
+  
+  // 命令相关状态
+  const commands = ref<CommandDefinition[]>([])
+  const isLoadingCommands = ref(false)
+  const commandsError = ref('')
+  const lastCommandsUpdate = ref<number | null>(null)
   
   // 连接统计
   const connectionAttempts = ref(0)
@@ -45,6 +59,9 @@ export const useRemoteStore = defineStore('remote', () => {
   const failedConnections = ref(0)
   const messagesSent = ref(0)
   const messagesReceived = ref(0)
+  
+  // 命令统计
+  const commandsSent = ref(0)
   
   // 初始化客户端
   function initializeClient() {
@@ -60,6 +77,13 @@ export const useRemoteStore = defineStore('remote', () => {
       successfulConnections.value++
       connectionAttempts.value++
       error.value = ''
+      
+      // 连接成功后自动获取命令列表
+      if (isConnected.value) {
+        fetchCommands().catch(err => {
+          console.warn('连接后获取命令列表失败:', err)
+        })
+      }
     })
     
     client.value.on(RemoteEventType.DISCONNECT, () => {
@@ -123,7 +147,7 @@ export const useRemoteStore = defineStore('remote', () => {
         text,
         requestConfig,
         stream,
-        requestConfig.use_tools,
+        useTools.value,
         streamHandler
       )
       
@@ -155,6 +179,96 @@ export const useRemoteStore = defineStore('remote', () => {
     }
   }
   
+  // 发送命令
+  async function sendCommand(
+    commandName: string,
+    parameters: Record<string, any> = {},
+    stream = false,
+    streamHandler?: StreamHandler
+  ): Promise<string> {
+    if (!client.value || !isConnected.value) {
+      throw new Error('未连接到远程服务器')
+    }
+    
+    try {
+      // 注意：sendInstruction 方法不支持 streamHandler 参数
+      // 如果需要流式处理，需要使用 sendText 方法
+      const response = await client.value.sendInstruction(
+        commandName,
+        parameters,
+        requestConfig,
+        stream,
+        useTools.value
+      )
+      
+      commandsSent.value++
+      messagesSent.value++
+      
+      // 提取响应文本
+      if ('Text' in response.response) {
+        return response.response.Text
+      } else if ('Stream' in response.response) {
+        return response.response.Stream.join('')
+      } else if ('Multi' in response.response) {
+        // 处理复合响应
+        const texts: string[] = []
+        for (const item of response.response.Multi) {
+          if ('Text' in item) {
+            texts.push(item.Text)
+          } else if ('Stream' in item) {
+            texts.push(item.Stream.join(''))
+          }
+        }
+        return texts.join('\n')
+      } else {
+        throw new Error('不支持的响应类型')
+      }
+    } catch (err: any) {
+      lastError.value = error.value
+      error.value = err.message || '发送命令失败'
+      throw err
+    }
+  }
+  
+  // 获取命令列表
+  async function fetchCommands(): Promise<CommandDefinition[]> {
+    if (!client.value || !isConnected.value) {
+      throw new Error('未连接到远程服务器')
+    }
+    
+    isLoadingCommands.value = true
+    commandsError.value = ''
+    
+    try {
+      const response = await client.value.getCommands()
+      commands.value = response.commands
+      lastCommandsUpdate.value = response.timestamp || Date.now()
+      return response.commands
+    } catch (err: any) {
+      commandsError.value = err.message || '获取命令列表失败'
+      throw err
+    } finally {
+      isLoadingCommands.value = false
+    }
+  }
+  
+  // 刷新命令列表
+  async function refreshCommands(): Promise<CommandDefinition[]> {
+    return fetchCommands()
+  }
+  
+  // 清空命令列表
+  function clearCommands(): void {
+    commands.value = []
+    lastCommandsUpdate.value = null
+    commandsError.value = ''
+  }
+  
+  // 根据名称查找命令
+  function findCommandByName(name: string): CommandDefinition | undefined {
+    return commands.value.find(cmd => cmd.name === name)
+  }
+  
   // 更新配置
   function updateConfig(newConfig: Partial<RemoteClientConfig>): void {
     Object.assign(config, newConfig)
@@ -169,6 +283,11 @@ export const useRemoteStore = defineStore('remote', () => {
   // 更新请求配置
   function updateRequestConfig(newConfig: Partial<RequestConfig>): void {
     Object.assign(requestConfig, newConfig)
+  }
+  
+  // 更新是否使用工具
+  function updateUseTools(value: boolean): void {
+    useTools.value = value
   }
   
   // 重置错误
@@ -210,6 +329,21 @@ export const useRemoteStore = defineStore('remote', () => {
     }
   })
   
+  // 命令相关计算属性
+  const hasCommands = computed(() => commands.value.length > 0)
+  const commandsCount = computed(() => commands.value.length)
+  const commandsLastUpdated = computed(() => {
+    if (!lastCommandsUpdate.value) return null
+    return new Date(lastCommandsUpdate.value).toLocaleString()
+  })
+  const commandsByCategory = computed(() => {
+    // 这里可以根据需要按类别分组命令
+    // 暂时返回所有命令
+    return {
+      all: commands.value
+    }
+  })
+  
   // 初始化
   initializeClient()
   
@@ -217,6 +351,7 @@ export const useRemoteStore = defineStore('remote', () => {
     // 状态
     config,
     requestConfig,
+    useTools,
     connectionStatus,
     isConnecting,
     isConnected,
@@ -224,23 +359,40 @@ export const useRemoteStore = defineStore('remote', () => {
     error,
     lastError,
     
+    // 命令状态
+    commands,
+    isLoadingCommands,
+    commandsError,
+    lastCommandsUpdate,
+    
     // 统计
     connectionAttempts,
     successfulConnections,
     failedConnections,
     messagesSent,
     messagesReceived,
+    commandsSent,
     
     // 计算属性
     statusText,
     statusColor,
+    hasCommands,
+    commandsCount,
+    commandsLastUpdated,
+    commandsByCategory,
     
     // 方法
     connect,
     disconnect,
     sendText,
+    sendCommand,
+    fetchCommands,
+    refreshCommands,
+    clearCommands,
+    findCommandByName,
     updateConfig,
     updateRequestConfig,
+    updateUseTools,
     resetError,
     initializeClient
   }

@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-// 由于我们目前不需要实际调用Tauri功能，暂时注释掉这个导入
-// import { invoke } from '@tauri-apps/api'
+import { useRemoteStore } from './remote-store'
 
 export const useAppStore = defineStore('app', () => {
   // 错误类型枚举
@@ -12,6 +11,9 @@ export const useAppStore = defineStore('app', () => {
     AUTH = 'auth',
     UNKNOWN = 'unknown'
   }
+
+  // 远程通信 store
+  const remoteStore = useRemoteStore()
 
   // 状态
   const messages = ref<Array<{
@@ -25,7 +27,7 @@ export const useAppStore = defineStore('app', () => {
   const loadingProgress = ref(0)
   const error = ref('')
   const errorType = ref<ErrorType | null>(null)
-  const apiUrl = ref('https://api.example.com/ai') // 替换为实际的AI API地址
+  const apiUrl = ref('https://api.example.com/ai') // 保留，用于向后兼容
   const retryCount = ref(0)
   const maxRetries = 3
   const isRetrying = ref(false)
@@ -33,6 +35,11 @@ export const useAppStore = defineStore('app', () => {
   // 计算属性
   const hasError = computed(() => error.value !== '')
   const canRetry = computed(() => retryCount.value < maxRetries && errorType.value !== ErrorType.AUTH)
+  
+  // 远程连接状态计算属性
+  const isRemoteConnected = computed(() => remoteStore.isConnected)
+  const remoteStatusText = computed(() => remoteStore.statusText)
+  const remoteStatusColor = computed(() => remoteStore.statusColor)
 
   // 添加消息
   function addMessage(content: string, isUser: boolean, status: 'sending' | 'sent' | 'error' = 'sent') {
@@ -58,7 +65,7 @@ export const useAppStore = defineStore('app', () => {
   // 处理错误
   function handleError(err: any) {
     // 确定错误类型
-    if (err.message?.includes('network') || err.message?.includes('连接')) {
+    if (err.message?.includes('network') || err.message?.includes('连接') || err.message?.includes('未连接')) {
       errorType.value = ErrorType.NETWORK
       error.value = '网络连接错误，请检查您的网络连接'
     } else if (err.message?.includes('timeout') || err.message?.includes('超时')) {
@@ -128,50 +135,65 @@ export const useAppStore = defineStore('app', () => {
         }
       }, 300)
       
-      // 模拟API调用
-      // 在实际应用中，这里会调用真实的API
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      // 使用远程通信模块发送消息
+      let aiResponse = ''
       
-      // 模拟错误（用于测试）
-      // 如果消息包含"error"，"timeout"，"network"或"server"，则模拟相应的错误
-      if (content.toLowerCase().includes('error')) {
-        throw new Error('发生了一个未知错误')
-      } else if (content.toLowerCase().includes('timeout')) {
-        const timeoutError = new Error('请求超时')
-        timeoutError.message = 'timeout'
-        throw timeoutError
-      } else if (content.toLowerCase().includes('network')) {
-        const networkError = new Error('网络连接错误')
-        networkError.message = 'network'
-        throw networkError
-      } else if (content.toLowerCase().includes('server')) {
-        const serverError = new Error('服务器错误')
-        serverError.message = 'server'
-        throw serverError
+      try {
+        // 首先确保已连接到远程服务器
+        if (!remoteStore.isConnected) {
+          await remoteStore.connect()
+        }
+        
+        // 发送消息到远程服务器
+        aiResponse = await remoteStore.sendText(content)
+        
+        clearInterval(progressInterval)
+        loadingProgress.value = 100
+        
+        // 更新消息状态（如果不是重试）
+        if (!isRetry && messageId) {
+          updateMessageStatus(messageId, 'sent')
+        }
+        
+        // 添加AI回复
+        addMessage(aiResponse, false)
+        
+        // 重置重试计数
+        if (isRetry) {
+          retryCount.value = 0
+        }
+        
+        return { reply: aiResponse }
+      } catch (remoteError: any) {
+        // 如果远程通信失败，回退到模拟响应
+        console.warn('远程通信失败，使用模拟响应:', remoteError)
+        
+        // 模拟API调用
+        await new Promise(resolve => setTimeout(resolve, 1500))
+        
+        // 模拟响应
+        const response = {
+          reply: `这是对"${content}"的AI回复。远程通信失败，使用模拟模式。`
+        }
+        
+        clearInterval(progressInterval)
+        loadingProgress.value = 100
+        
+        // 更新消息状态（如果不是重试）
+        if (!isRetry && messageId) {
+          updateMessageStatus(messageId, 'sent')
+        }
+        
+        // 添加AI回复
+        addMessage(response.reply, false)
+        
+        // 重置重试计数
+        if (isRetry) {
+          retryCount.value = 0
+        }
+        
+        return response
       }
-      
-      // 模拟响应
-      const response = {
-        reply: `这是对"${content}"的AI回复。我是一个模拟的AI助手，目前只能返回这个预设的回复。`
-      }
-      
-      clearInterval(progressInterval)
-      loadingProgress.value = 100
-      
-      // 更新消息状态（如果不是重试）
-      if (!isRetry && messageId) {
-        updateMessageStatus(messageId, 'sent')
-      }
-      
-      // 添加AI回复
-      addMessage(response.reply, false)
-      
-      // 重置重试计数
-      if (isRetry) {
-        retryCount.value = 0
-      }
-      
-      return response
     } catch (err: any) {
       // 如果不是重试，将最后一条消息标记为错误
       if (!isRetry && messages.value.length > 0) {
@@ -202,6 +224,37 @@ export const useAppStore = defineStore('app', () => {
     apiUrl.value = url
     resetError()
   }
+  
+  // 连接到远程服务器
+  async function connectToRemote() {
+    try {
+      await remoteStore.connect()
+      return true
+    } catch (err: any) {
+      handleError(err)
+      return false
+    }
+  }
+  
+  // 断开远程连接
+  function disconnectFromRemote() {
+    remoteStore.disconnect()
+  }
+  
+  // 更新远程服务器配置
+  function updateRemoteConfig(host: string, port: number) {
+    remoteStore.updateConfig({ host, port })
+  }
+  
+  // 更新远程请求配置
+  function updateRemoteRequestConfig(config: any) {
+    remoteStore.updateRequestConfig(config)
+  }
+  
+  // 更新是否使用工具
+  function updateRemoteUseTools(useTools: boolean) {
+    remoteStore.updateUseTools(useTools)
+  }
 
   return {
     messages,
@@ -213,11 +266,19 @@ export const useAppStore = defineStore('app', () => {
     hasError,
     canRetry,
     isRetrying,
+    isRemoteConnected,
+    remoteStatusText,
+    remoteStatusColor,
     addMessage,
     sendMessageToAI,
     clearMessages,
     setApiUrl,
     retryLastMessage,
-    resetError
+    resetError,
+    connectToRemote,
+    disconnectFromRemote,
+    updateRemoteConfig,
+    updateRemoteRequestConfig,
+    updateRemoteUseTools
   }
 })

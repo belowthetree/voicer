@@ -11,7 +11,9 @@ import type {
   RequestConfig,
   RemoteEventData,
   StreamHandler,
-  ToolCallHandler
+  ToolCallHandler,
+  CommandDefinition,
+  CommandListResponse
 } from '../types/remote-protocol';
 import {
   ConnectionStatus,
@@ -217,6 +219,120 @@ export class RemoteClient {
     useTools = true
   ): Promise<RemoteResponse> {
     return this.sendRequest({ File: { filename, content_type: contentType, data } }, config, stream, useTools);
+  }
+
+  /**
+   * 获取可用命令列表
+   */
+  async getCommands(): Promise<CommandListResponse> {
+    if (this.status !== ConnectionStatus.CONNECTED) {
+      throw new Error('未连接到服务器');
+    }
+
+    const requestId = this.generateRequestId();
+    const request: RemoteRequest = {
+      request_id: requestId,
+      input: { GetCommands: null },
+      stream: false,
+      use_tools: false
+    };
+
+    return new Promise((resolve, reject) => {
+      // 设置请求超时
+      const timeoutId = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error('获取命令列表超时'));
+      }, this.config.timeout || 30000);
+
+      this.pendingRequests.set(requestId, {
+        resolve: (response) => {
+          clearTimeout(timeoutId);
+          try {
+            // 解析命令列表响应
+            if ('Text' in response.response) {
+              const text = response.response.Text;
+              
+              // 检查文本是否为空
+              if (!text || text.trim() === '') {
+                console.warn('服务器返回空的命令列表响应，返回空命令列表');
+                resolve({ commands: [] });
+                return;
+              }
+              
+              try {
+                const commandList = JSON.parse(text) as CommandListResponse;
+                console.log('成功解析命令列表:', commandList);
+                resolve(commandList);
+              } catch (parseError) {
+                console.error('JSON解析失败，原始响应:', text);
+                
+                // 尝试处理可能的响应格式
+                // 1. 检查是否是直接的CommandListResponse对象（没有Text包装）
+                try {
+                  const directResponse = JSON.parse(text);
+                  if (directResponse && typeof directResponse === 'object') {
+                    // 检查是否有commands字段
+                    if (Array.isArray(directResponse.commands)) {
+                      console.log('检测到直接命令列表格式');
+                      resolve(directResponse as CommandListResponse);
+                      return;
+                    }
+                    // 或者响应本身就是命令数组
+                    else if (Array.isArray(directResponse)) {
+                      console.log('检测到命令数组格式');
+                      resolve({ commands: directResponse });
+                      return;
+                    }
+                  }
+                } catch (e) {
+                  // 忽略，继续尝试其他格式
+                }
+                
+                // 2. 检查是否是错误消息
+                if (text.includes('error') || text.includes('Error') || text.includes('not found') || text.includes('不支持')) {
+                  console.warn('服务器返回错误消息:', text);
+                  // 返回空命令列表而不是抛出错误
+                  resolve({ commands: [] });
+                  return;
+                }
+                
+                // 3. 如果以上都不行，返回空命令列表
+                console.warn('无法解析命令列表响应，返回空列表');
+                resolve({ commands: [] });
+              }
+            } else {
+              console.warn('服务器响应中没有Text字段，响应类型:', Object.keys(response.response)[0]);
+              // 检查是否有错误字段
+              if (response.error) {
+                console.warn('服务器返回错误:', response.error);
+              }
+              // 返回空命令列表而不是抛出错误
+              resolve({ commands: [] });
+            }
+          } catch (error) {
+            console.error('处理命令列表响应时发生错误:', error);
+            // 返回空命令列表而不是抛出错误
+            resolve({ commands: [] });
+          }
+        },
+        reject: (error) => {
+          clearTimeout(timeoutId);
+          console.error('获取命令列表请求被拒绝:', error);
+          // 返回空命令列表而不是抛出错误
+          resolve({ commands: [] });
+        }
+      });
+
+      try {
+        console.log('发送获取命令列表请求:', request);
+        this.socket?.send(JSON.stringify(request));
+      } catch (error) {
+        this.pendingRequests.delete(requestId);
+        console.error('发送获取命令列表请求失败:', error);
+        // 返回空命令列表而不是抛出错误
+        resolve({ commands: [] });
+      }
+    });
   }
 
   /**

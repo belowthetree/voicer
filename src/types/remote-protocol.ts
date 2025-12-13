@@ -9,7 +9,8 @@ export type InputType =
   | { Image: { data: string; mime_type?: string } }
   | { Instruction: { command: string; parameters: Record<string, any> } }
   | { File: { filename: string; content_type: string; data: string } }
-  | { Multi: InputType[] };
+  | { Multi: InputType[] }
+  | { GetCommands: null };
 
 // 请求配置
 export interface RequestConfig {
@@ -99,4 +100,27 @@ export interface StreamHandler {
 export interface ToolCallHandler {
   onToolCall?: (toolName: string, args: Record<string, any>) => Promise<any>;
   onToolResult?: (toolName: string, result: any) => void;
+}
+
+// 命令定义
+export interface CommandDefinition {
+  name: string;
+  description: string;
+  parameters?: Record<string, {
+    type: string;
+    description: string;
+    required?: boolean;
+    default?: any;
+  }>;
+  examples?: Array<{
+    command: string;
+    description: string;
+  }>;
+}
+
+// 命令列表响应
+export interface CommandListResponse {
+  commands: CommandDefinition[];
+  version?: string;
+  timestamp?: number;
 }
