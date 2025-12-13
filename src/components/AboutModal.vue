@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { NModal, NCard, NText, NButton, NSpace, NIcon } from 'naive-ui'
 import { InformationCircleOutline, LogoGithub, DocumentTextOutline } from '@vicons/ionicons5'
 
@@ -11,6 +12,21 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:show': [value: boolean]
 }>()
+
+// 本地模态框显示状态
+const localShow = ref(props.show)
+
+// 监听props变化，更新本地状态
+watch(() => props.show, (newVal) => {
+  localShow.value = newVal
+})
+
+// 监听本地状态变化，更新props
+watch(localShow, (newVal) => {
+  if (newVal !== props.show) {
+    emit('update:show', newVal)
+  }
+})
 
 // 关闭模态框
 const closeModal = () => {
@@ -29,7 +45,7 @@ const openDocs = () => {
 
 <template>
   <NModal
-    v-model:show="props.show"
+    v-model:show="localShow"
     preset="card"
     title="关于 Voicer AI"
     style="width: 500px; max-width: 90vw;"

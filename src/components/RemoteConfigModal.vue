@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useAppStore } from '../stores'
 import { useRemoteStore } from '../stores/remote-store'
 import { 
@@ -18,15 +18,12 @@ const emit = defineEmits<{
   'update:show': [value: boolean]
 }>()
 
-// 远程连接配置
-const remoteHost = ref('127.0.0.1')
-const remotePort = ref(8080)
-const useTools = ref(true)
-const maxTokens = ref(2000)
-const askBeforeToolExecution = ref(true)
+// 本地模态框显示状态
+const localShow = ref(props.show)
 
 // 监听props变化，更新本地状态
 watch(() => props.show, (newVal) => {
+  localShow.value = newVal
   if (newVal) {
     // 从store加载当前配置
     remoteHost.value = remoteStore.config.host
@@ -36,6 +33,20 @@ watch(() => props.show, (newVal) => {
     askBeforeToolExecution.value = remoteStore.requestConfig.ask_before_tool_execution ?? true
   }
 })
+
+// 监听本地状态变化，更新props
+watch(localShow, (newVal) => {
+  if (newVal !== props.show) {
+    emit('update:show', newVal)
+  }
+})
+
+// 远程连接配置
+const remoteHost = ref('127.0.0.1')
+const remotePort = ref(8080)
+const useTools = ref(true)
+const maxTokens = ref(2000)
+const askBeforeToolExecution = ref(true)
 
 // 保存远程配置
 const saveRemoteConfig = () => {
@@ -70,7 +81,7 @@ const closeModal = () => {
 
 <template>
   <NModal 
-    v-model:show="props.show" 
+    v-model:show="localShow" 
     preset="card" 
     title="远程服务器配置" 
     style="width: 500px"
