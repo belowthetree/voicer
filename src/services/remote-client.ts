@@ -410,6 +410,51 @@ export class RemoteClient {
     });
   }
 
+  /**
+   * 发送工具确认响应
+   */
+  async sendToolConfirmationResponse(
+    requestId: string,
+    name: string,
+    arguments_: Record<string, any>,
+    approved: boolean,
+    reason?: string
+  ): Promise<void> {
+    if (this.status !== ConnectionStatus.CONNECTED) {
+      throw new Error('未连接到服务器');
+    }
+
+    const request = {
+      request_id: requestId,
+      input: {
+        ToolConfirmationResponse: {
+          name,
+          arguments: arguments_,
+          approved,
+          reason
+        }
+      } as any,
+      stream: false,
+      use_tools: false
+    };
+
+    return new Promise((resolve, reject) => {
+      // 设置请求超时
+      const timeoutId = setTimeout(() => {
+        reject(new Error('发送工具确认响应超时'));
+      }, this.config.timeout || 30000);
+
+      try {
+        this.socket?.send(JSON.stringify(request));
+        clearTimeout(timeoutId);
+        resolve();
+      } catch (error) {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
+    });
+  }
+
   // 私有方法
 
   private setStatus(status: ConnectionStatus): void {
@@ -422,14 +467,46 @@ export class RemoteClient {
 
   private handleMessage(data: string): void {
     try {
+      console.log('收到原始消息:', data);
       const response: RemoteResponse = JSON.parse(data);
       const requestId = response.request_id;
 
+      console.log('解析后的响应:', {
+        requestId,
+        responseType: Object.keys(response.response)[0],
+        hasError: !!response.error
+      });
+
       // 查找对应的请求处理器
       const requestHandler = this.pendingRequests.get(requestId);
+      
+      // 处理工具确认请求（无论是否有请求处理器）
+      if ('ToolConfirmationRequest' in response.response) {
+        console.log('处理工具确认请求:', response.response.ToolConfirmationRequest);
+        this.emitEvent(RemoteEventType.TOOL_CONFIRMATION_REQUEST, {
+          requestId,
+          ...response.response.ToolConfirmationRequest
+        });
+        // 工具确认请求不会立即完成，等待用户确认
+        return;
+      }
+      
+      // 处理工具调用（无论是否有请求处理器）
+      if ('ToolCall' in response.response) {
+        console.log('处理工具调用:', response.response.ToolCall);
+        this.emitEvent(RemoteEventType.TOOL_CALL, {
+          requestId,
+          ...response.response.ToolCall
+        });
+        // 工具调用不会立即完成，等待工具执行结果
+        return;
+      }
+      
       if (requestHandler) {
+        console.log('找到请求处理器:', requestId);
         // 处理流式响应
         if ('Stream' in response.response && requestHandler.streamHandler) {
+          console.log('处理流式响应');
           const streamChunks = response.response.Stream;
           streamChunks.forEach(chunk => {
             requestHandler.streamHandler?.onChunk?.(chunk);
@@ -441,21 +518,15 @@ export class RemoteClient {
           this.pendingRequests.delete(requestId);
           requestHandler.resolve(response);
         }
-        // 处理工具调用
-        else if ('ToolCall' in response.response) {
-          this.emitEvent(RemoteEventType.TOOL_CALL, {
-            requestId,
-            ...response.response.ToolCall
-          });
-          // 工具调用不会立即完成，等待工具执行结果
-        }
         // 处理普通响应
         else {
+          console.log('处理普通响应');
           this.pendingRequests.delete(requestId);
           requestHandler.resolve(response);
           this.emitEvent(RemoteEventType.MESSAGE, response);
         }
       } else {
+        console.log('未找到请求处理器，可能是服务器主动推送的消息');
         // 未找到对应的请求，可能是服务器主动推送的消息
         this.emitEvent(RemoteEventType.MESSAGE, response);
       }

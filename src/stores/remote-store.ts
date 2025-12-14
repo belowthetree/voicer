@@ -11,9 +11,11 @@ import type {
   RequestConfig, 
   StreamHandler,
   CommandDefinition,
-  CommandListResponse 
+  CommandListResponse,
+  ToolConfirmationResponse 
 } from '../types/remote-protocol'
 import { ConnectionStatus, RemoteEventType } from '../types/remote-protocol'
+import { useAppStore } from './index'
 
 export const useRemoteStore = defineStore('remote', () => {
   // 远程客户端实例
@@ -63,6 +65,20 @@ export const useRemoteStore = defineStore('remote', () => {
   // 命令统计
   const commandsSent = ref(0)
   
+  // 工具确认相关状态
+  const pendingToolConfirmations = ref<Array<{
+    requestId: string;
+    name: string;
+    arguments: Record<string, any>;
+    description?: string;
+    timestamp: number;
+  }>>([])
+  
+  const toolConfirmationError = ref('')
+  
+  // 应用存储实例
+  const appStore = useAppStore()
+  
   // 初始化客户端
   function initializeClient() {
     if (client.value) {
@@ -99,6 +115,52 @@ export const useRemoteStore = defineStore('remote', () => {
     
     client.value.on(RemoteEventType.MESSAGE, () => {
       messagesReceived.value++
+    })
+    
+    // 监听工具确认请求
+    client.value.on(RemoteEventType.TOOL_CONFIRMATION_REQUEST, (eventData) => {
+      console.log('远程存储收到TOOL_CONFIRMATION_REQUEST事件:', eventData)
+      const { requestId, name, arguments: args, description } = eventData.data
+      
+      console.log(`处理工具确认请求: ${name}`, {
+        requestId,
+        name,
+        args,
+        description
+      })
+      
+      // 添加到待确认列表
+      pendingToolConfirmations.value.push({
+        requestId,
+        name,
+        arguments: args,
+        description,
+        timestamp: Date.now()
+      })
+      
+      console.log('添加到待确认列表后，当前数量:', pendingToolConfirmations.value.length)
+      
+      // 添加到消息列表
+      console.log('调用appStore.addToolConfirmationMessage...')
+      appStore.addToolConfirmationMessage(requestId, name, args, description)
+      
+      console.log(`收到工具确认请求: ${name}`, args)
+    })
+    
+    // 监听工具确认响应
+    client.value.on(RemoteEventType.TOOL_CONFIRMATION_RESPONSE, (eventData) => {
+      const { requestId, name, approved, reason } = eventData.data
+      
+      // 从待确认列表中移除
+      const index = pendingToolConfirmations.value.findIndex(
+        item => item.requestId === requestId && item.name === name
+      )
+      
+      if (index !== -1) {
+        pendingToolConfirmations.value.splice(index, 1)
+      }
+      
+      console.log(`工具确认响应: ${name} - ${approved ? '已批准' : '已拒绝'}`, reason)
     })
   }
   
@@ -261,6 +323,88 @@ export const useRemoteStore = defineStore('remote', () => {
       throw err
     }
   }
+  
+  // 发送工具确认响应
+  async function sendToolConfirmationResponse(
+    requestId: string,
+    name: string,
+    arguments_: Record<string, any>,
+    approved: boolean,
+    reason?: string
+  ): Promise<void> {
+    if (!client.value || !isConnected.value) {
+      throw new Error('未连接到远程服务器')
+    }
+    
+    toolConfirmationError.value = ''
+    
+    try {
+      await client.value.sendToolConfirmationResponse(
+        requestId,
+        name,
+        arguments_,
+        approved,
+        reason
+      )
+      
+      // 从待确认列表中移除
+      const index = pendingToolConfirmations.value.findIndex(
+        item => item.requestId === requestId && item.name === name
+      )
+      
+      if (index !== -1) {
+        pendingToolConfirmations.value.splice(index, 1)
+      }
+      
+      // 更新消息状态
+      appStore.updateToolConfirmationStatus(requestId, approved ? 'approved' : 'rejected')
+      
+      console.log(`已发送工具确认响应: ${name} - ${approved ? '已批准' : '已拒绝'}`)
+    } catch (err: any) {
+      toolConfirmationError.value = err.message || '发送工具确认响应失败'
+      throw err
+    }
+  }
+  
+  // 批准工具调用
+  async function approveToolCall(
+    requestId: string,
+    name: string,
+    arguments_: Record<string, any>,
+    reason?: string
+  ): Promise<void> {
+    return sendToolConfirmationResponse(requestId, name, arguments_, true, reason)
+  }
+  
+  // 拒绝工具调用
+  async function rejectToolCall(
+    requestId: string,
+    name: string,
+    arguments_: Record<string, any>,
+    reason?: string
+  ): Promise<void> {
+    return sendToolConfirmationResponse(requestId, name, arguments_, false, reason)
+  }
+  
+  // 获取待确认的工具请求
+  function getPendingToolConfirmations() {
+    return pendingToolConfirmations.value
+  }
+  
+  // 清空待确认的工具请求
+  function clearPendingToolConfirmations(): void {
+    pendingToolConfirmations.value = []
+  }
+  
+  // 检查是否有待确认的工具请求
+  const hasPendingToolConfirmations = computed(() => 
+    pendingToolConfirmations.value.length > 0
+  )
+  
+  // 获取待确认工具请求数量
+  const pendingToolConfirmationsCount = computed(() => 
+    pendingToolConfirmations.value.length
+  )
 
   // 获取命令列表
   async function fetchCommands(): Promise<CommandDefinition[]> {
@@ -376,6 +520,15 @@ export const useRemoteStore = defineStore('remote', () => {
     }
   })
   
+  // 工具确认相关计算属性
+  const toolConfirmationsByRequestId = computed(() => {
+    const result: Record<string, typeof pendingToolConfirmations.value[0]> = {}
+    pendingToolConfirmations.value.forEach(item => {
+      result[item.requestId] = item
+    })
+    return result
+  })
+  
   // 初始化
   initializeClient()
   
@@ -397,6 +550,10 @@ export const useRemoteStore = defineStore('remote', () => {
     commandsError,
     lastCommandsUpdate,
     
+    // 工具确认状态
+    pendingToolConfirmations,
+    toolConfirmationError,
+    
     // 统计
     connectionAttempts,
     successfulConnections,
@@ -413,6 +570,11 @@ export const useRemoteStore = defineStore('remote', () => {
     commandsLastUpdated,
     commandsByCategory,
     
+    // 工具确认计算属性
+    hasPendingToolConfirmations,
+    pendingToolConfirmationsCount,
+    toolConfirmationsByRequestId,
+    
     // 方法
     connect,
     disconnect,
@@ -428,6 +590,13 @@ export const useRemoteStore = defineStore('remote', () => {
     updateRequestConfig,
     updateUseTools,
     resetError,
-    initializeClient
+    initializeClient,
+    
+    // 工具确认方法
+    sendToolConfirmationResponse,
+    approveToolCall,
+    rejectToolCall,
+    getPendingToolConfirmations,
+    clearPendingToolConfirmations
   }
 })

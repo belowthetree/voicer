@@ -15,14 +15,32 @@ export const useAppStore = defineStore('app', () => {
   // 远程通信 store
   const remoteStore = useRemoteStore()
 
+  // 消息类型定义
+  interface BaseMessage {
+    id: string;
+    timestamp: number;
+  }
+
+  interface TextMessage extends BaseMessage {
+    type: 'text';
+    content: string;
+    isUser: boolean;
+    status?: 'sending' | 'sent' | 'error';
+  }
+
+  interface ToolConfirmationMessage extends BaseMessage {
+    type: 'tool-confirmation';
+    requestId: string;
+    name: string;
+    arguments: Record<string, any>;
+    description?: string;
+    status: 'pending' | 'approved' | 'rejected';
+  }
+
+  type Message = TextMessage | ToolConfirmationMessage;
+
   // 状态
-  const messages = ref<Array<{
-    id: string,
-    content: string,
-    isUser: boolean,
-    timestamp: number,
-    status?: 'sending' | 'sent' | 'error'
-  }>>([]);
+  const messages = ref<Message[]>([]);
   const isLoading = ref(false)
   const loadingProgress = ref(0)
   const error = ref('')
@@ -41,17 +59,72 @@ export const useAppStore = defineStore('app', () => {
   const remoteStatusText = computed(() => remoteStore.statusText)
   const remoteStatusColor = computed(() => remoteStore.statusColor)
 
-  // 添加消息
-  function addMessage(content: string, isUser: boolean, status: 'sending' | 'sent' | 'error' = 'sent') {
+  // 添加文本消息
+  function addTextMessage(content: string, isUser: boolean, status: 'sending' | 'sent' | 'error' = 'sent') {
     const id = Date.now().toString()
-    messages.value.push({
+    const message: TextMessage = {
+      type: 'text',
       id,
       content,
       isUser,
       timestamp: Date.now(),
       status
-    })
+    }
+    messages.value.push(message)
     return id
+  }
+
+  // 添加工具确认消息
+  function addToolConfirmationMessage(
+    requestId: string,
+    name: string,
+    arguments_: Record<string, any>,
+    description?: string
+  ) {
+    console.log('appStore.addToolConfirmationMessage被调用:', {
+      requestId,
+      name,
+      arguments: arguments_,
+      description
+    })
+    
+    const id = Date.now().toString()
+    const message: ToolConfirmationMessage = {
+      type: 'tool-confirmation',
+      id,
+      requestId,
+      name,
+      arguments: arguments_,
+      description,
+      timestamp: Date.now(),
+      status: 'pending'
+    }
+    
+    console.log('创建的消息对象:', message)
+    console.log('添加前消息数量:', messages.value.length)
+    
+    messages.value.push(message)
+    
+    console.log('添加后消息数量:', messages.value.length)
+    console.log('最后一条消息:', messages.value[messages.value.length - 1])
+    
+    return id
+  }
+
+  // 更新工具确认消息状态
+  function updateToolConfirmationStatus(requestId: string, status: 'approved' | 'rejected') {
+    const message = messages.value.find(m => 
+      m.type === 'tool-confirmation' && m.requestId === requestId
+    ) as ToolConfirmationMessage | undefined
+    
+    if (message) {
+      message.status = status
+    }
+  }
+
+  // 向后兼容的addMessage函数
+  function addMessage(content: string, isUser: boolean, status: 'sending' | 'sent' | 'error' = 'sent') {
+    return addTextMessage(content, isUser, status)
   }
 
   // 更新消息状态
@@ -98,7 +171,9 @@ export const useAppStore = defineStore('app', () => {
     if (!canRetry.value || messages.value.length === 0) return
     
     // 找到最后一条用户消息
-    const lastUserMessage = [...messages.value].reverse().find(m => m.isUser)
+    const lastUserMessage = [...messages.value].reverse().find(m => 
+      m.type === 'text' && m.isUser
+    ) as TextMessage | undefined
     if (!lastUserMessage) return
     
     isRetrying.value = true
@@ -198,7 +273,7 @@ export const useAppStore = defineStore('app', () => {
       // 如果不是重试，将最后一条消息标记为错误
       if (!isRetry && messages.value.length > 0) {
         const lastMessage = messages.value[messages.value.length - 1]
-        if (lastMessage.isUser) {
+        if (lastMessage.type === 'text' && lastMessage.isUser) {
           updateMessageStatus(lastMessage.id, 'error')
         }
       }
@@ -270,6 +345,9 @@ export const useAppStore = defineStore('app', () => {
     remoteStatusText,
     remoteStatusColor,
     addMessage,
+    addTextMessage,
+    addToolConfirmationMessage,
+    updateToolConfirmationStatus,
     sendMessageToAI,
     clearMessages,
     setApiUrl,

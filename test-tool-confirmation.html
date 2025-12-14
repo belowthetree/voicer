@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工具确认协议测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .test-section {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            background-color: #f9f9f9;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .tool-confirmation {
+            border-left: 4px solid #ffc107;
+            padding: 10px;
+            margin: 10px 0;
+            background-color: #fff3cd;
+        }
+        .tool-params {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>工具确认协议测试</h1>
+    
+    <div class="test-section">
+        <h2>测试说明</h2>
+        <p>此页面用于验证工具确认协议是否正常工作。请按照以下步骤进行测试：</p>
+        <ol>
+            <li>在浏览器中打开 <a href="http://localhost:5174/" target="_blank">http://localhost:5174/</a></li>
+            <li>点击右上角的"连接"按钮</li>
+            <li>在配置中设置服务器地址为: <code>ws://localhost:8081</code></li>
+            <li>点击"连接"按钮连接到测试服务器</li>
+            <li>等待5秒，测试服务器将自动发送工具确认请求</li>
+            <li>在消息列表中查看工具确认消息</li>
+            <li>测试批准和拒绝按钮</li>
+        </ol>
+    </div>
+    
+    <div class="test-section">
+        <h2>预期结果</h2>
+        
+        <div class="tool-confirmation">
+            <h3>工具确认消息应显示：</h3>
+            <p><strong>工具名称：</strong>execute_command</p>
+            <p><strong>描述：</strong>构建项目</p>
+            <div class="tool-params">
+                <strong>参数：</strong><br>
+                command: "npm run build"<br>
+                requires_approval: true
+            </div>
+            <p><strong>按钮：</strong>应显示"批准"和"拒绝"按钮</p>
+        </div>
+        
+        <div class="tool-confirmation">
+            <h3>第二个工具确认消息（10秒后）：</h3>
+            <p><strong>工具名称：</strong>read_file</p>
+            <p><strong>描述：</strong>读取主文件内容</p>
+            <div class="tool-params">
+                <strong>参数：</strong><br>
+                path: "src/main.ts"
+            </div>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试验证</h2>
+        <p>请检查以下功能是否正常工作：</p>
+        
+        <div id="test-results">
+            <p><input type="checkbox" id="test1"> 工具确认消息正确显示在消息列表中</p>
+            <p><input type="checkbox" id="test2"> 工具名称、描述和参数正确显示</p>
+            <p><input type="checkbox" id="test3"> 批准按钮正常工作（点击后消息状态更新）</p>
+            <p><input type="checkbox" id="test4"> 拒绝按钮正常工作（点击后消息状态更新）</p>
+            <p><input type="checkbox" id="test5"> 第二个工具确认消息在10秒后正确显示</p>
+            <p><input type="checkbox" id="test6"> 服务器正确接收并响应工具确认响应</p>
+        </div>
+        
+        <button onclick="checkAllTests()">标记所有测试为通过</button>
+        <button onclick="resetTests()">重置测试</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试服务器状态</h2>
+        <p>测试服务器运行在：<code>ws://localhost:8081</code></p>
+        <p>开发服务器运行在：<code>http://localhost:5174/</code></p>
+        <p>如果测试服务器没有响应，请检查终端输出。</p>
+    </div>
+    
+    <script>
+        function checkAllTests() {
+            const checkboxes = document.querySelectorAll('#test-results input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = true;
+            });
+            alert('所有测试已标记为通过！');
+        }
+        
+        function resetTests() {
+            const checkboxes = document.querySelectorAll('#test-results input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            alert('测试已重置！');
+        }
+        
+        // 自动打开应用链接
+        window.onload = function() {
+            console.log('工具确认协议测试页面已加载');
+            console.log('请按照说明测试工具确认功能');
+        };
+    </script>
+</body>
+</html>

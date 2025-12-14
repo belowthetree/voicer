@@ -38,6 +38,7 @@ export type ResponseContent =
   | { Stream: string[] }
   | { ToolCall: { name: string; arguments: Record<string, any> } }
   | { ToolResult: { name: string; result: Record<string, any> } }
+  | { ToolConfirmationRequest: { name: string; arguments: Record<string, any>; description?: string } }
   | { Multi: ResponseContent[] };
 
 // Token 使用统计
@@ -53,6 +54,14 @@ export interface RemoteResponse {
   response: ResponseContent;
   error?: string;
   token_usage?: TokenUsage;
+}
+
+// 工具确认响应
+export interface ToolConfirmationResponse {
+  name: string;
+  arguments: Record<string, any>;
+  approved: boolean;
+  reason?: string;
 }
 
 // 客户端配置
@@ -81,7 +90,9 @@ export enum RemoteEventType {
   ERROR = 'error',
   STREAM_CHUNK = 'stream_chunk',
   TOOL_CALL = 'tool_call',
-  TOOL_RESULT = 'tool_result'
+  TOOL_RESULT = 'tool_result',
+  TOOL_CONFIRMATION_REQUEST = 'tool_confirmation_request',
+  TOOL_CONFIRMATION_RESPONSE = 'tool_confirmation_response'
 }
 
 // 事件数据

@@ -124,7 +124,8 @@ export function useChatMessages() {
   // 计算最后一条消息是否为用户消息
   const lastMessageIsUser = computed(() => {
     if (store.messages.length === 0) return false
-    return store.messages[store.messages.length - 1].isUser
+    const lastMessage = store.messages[store.messages.length - 1]
+    return lastMessage.type === 'text' && lastMessage.isUser
   })
 
   // 停止生成/中断模型输出

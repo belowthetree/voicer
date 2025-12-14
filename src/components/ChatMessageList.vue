@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { useAppStore } from '../stores'
+import { useRemoteStore } from '../stores/remote-store'
 import { useChatMessages } from '../composables/useChatMessages'
 import { 
-  NAvatar, NButton, NIcon, NSpin, NAlert, NText
+  NAvatar, NButton, NIcon, NSpin, NAlert, NText, NTag, NCard, NPopover
 } from 'naive-ui'
 import { 
-  WarningOutline, Copy, Checkmark, Refresh, StopCircle
+  WarningOutline, Copy, Checkmark, Refresh, StopCircle,
+  CheckmarkCircle, CloseCircle, InformationCircle
 } from '@vicons/ionicons5'
+import { computed } from 'vue'
 
-const store = useAppStore()
+const appStore = useAppStore()
+const remoteStore = useRemoteStore()
 const { 
   messageContainer, 
   copiedMessageId, 
@@ -17,11 +21,43 @@ const {
   stopGenerating,
   marked 
 } = useChatMessages()
+
+// 处理工具确认
+const handleApproveToolCall = (requestId: string, name: string, arguments_: Record<string, any>) => {
+  remoteStore.approveToolCall(requestId, name, arguments_, '用户已批准')
+}
+
+const handleRejectToolCall = (requestId: string, name: string, arguments_: Record<string, any>) => {
+  remoteStore.rejectToolCall(requestId, name, arguments_, '用户已拒绝')
+}
+
+// 格式化工具参数为可读字符串
+const formatToolArguments = (args: Record<string, any>): string => {
+  try {
+    return JSON.stringify(args, null, 2)
+  } catch {
+    return String(args)
+  }
+}
+
+// 获取工具确认消息的状态标签
+const getToolConfirmationStatusTag = (status: string) => {
+  switch (status) {
+    case 'pending':
+      return { type: 'warning' as const, text: '待确认' }
+    case 'approved':
+      return { type: 'success' as const, text: '已批准' }
+    case 'rejected':
+      return { type: 'error' as const, text: '已拒绝' }
+    default:
+      return { type: 'default' as const, text: status }
+  }
+}
 </script>
 
 <template>
   <div class="message-list" ref="messageContainer">
-    <template v-if="store.messages.length === 0">
+    <template v-if="appStore.messages.length === 0">
       <div class="empty-state">
         <div class="welcome-icon">
           <NAvatar round size="large" :style="{ backgroundColor: '#10a37f' }">
@@ -44,11 +80,14 @@ const {
       </div>
     </template>
     
-    <div v-for="message in store.messages" :key="message.id" 
-         :class="['message', message.isUser ? 'user-message' : 'ai-message', 
-                 message.status === 'sending' ? 'sending' : '',
-                 message.status === 'error' ? 'error' : '']">
-      <div class="message-wrapper">
+    <div v-for="message in appStore.messages" :key="message.id" 
+         :class="['message', 
+                 message.type === 'text' && message.isUser ? 'user-message' : 'ai-message', 
+                 message.type === 'text' && message.status === 'sending' ? 'sending' : '',
+                 message.type === 'text' && message.status === 'error' ? 'error' : '']">
+      
+      <!-- 文本消息 -->
+      <div v-if="message.type === 'text'" class="message-wrapper">
         <div class="message-avatar">
           <NAvatar round size="small" :style="message.isUser ? { backgroundColor: '#10a37f' } : { backgroundColor: '#ececf1' }">
             <span :style="message.isUser ? { color: 'white' } : { color: '#000' }">
@@ -88,10 +127,77 @@ const {
           </div>
         </div>
       </div>
+      
+      <!-- 工具确认消息 -->
+      <div v-else-if="message.type === 'tool-confirmation'" class="tool-confirmation-wrapper">
+        <div class="message-avatar">
+          <NAvatar round size="small" :style="{ backgroundColor: '#f0ad4e' }">
+            <NIcon size="16" :style="{ color: 'white' }">
+              <InformationCircle />
+            </NIcon>
+          </NAvatar>
+        </div>
+        <div class="tool-confirmation-content">
+          <NCard size="small" :bordered="false" :style="{ backgroundColor: '#fff9e6', borderRadius: '12px' }">
+            <div class="tool-confirmation-header">
+              <div class="tool-confirmation-title">
+                <span class="tool-name">{{ message.name }}</span>
+                <NTag :type="getToolConfirmationStatusTag(message.status).type" size="small" round>
+                  {{ getToolConfirmationStatusTag(message.status).text }}
+                </NTag>
+              </div>
+              <div class="tool-description" v-if="message.description">
+                {{ message.description }}
+              </div>
+            </div>
+            
+            <div class="tool-arguments" v-if="Object.keys(message.arguments).length > 0">
+              <div class="arguments-title">参数:</div>
+              <pre class="arguments-content">{{ formatToolArguments(message.arguments) }}</pre>
+            </div>
+            
+            <div class="tool-confirmation-actions" v-if="message.status === 'pending'">
+              <div class="action-buttons">
+                <NButton 
+                  type="primary" 
+                  size="small" 
+                  @click="handleApproveToolCall(message.requestId, message.name, message.arguments)"
+                  :loading="remoteStore.toolConfirmationError !== ''"
+                >
+                  <template #icon>
+                    <NIcon><CheckmarkCircle /></NIcon>
+                  </template>
+                  批准
+                </NButton>
+                <NButton 
+                  type="error" 
+                  size="small" 
+                  @click="handleRejectToolCall(message.requestId, message.name, message.arguments)"
+                  :loading="remoteStore.toolConfirmationError !== ''"
+                >
+                  <template #icon>
+                    <NIcon><CloseCircle /></NIcon>
+                  </template>
+                  拒绝
+                </NButton>
+              </div>
+            </div>
+            
+            <div class="tool-confirmation-meta">
+              <div class="tool-time">{{ new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</div>
+            </div>
+          </NCard>
+          
+          <!-- 错误提示 -->
+          <div v-if="remoteStore.toolConfirmationError" class="tool-confirmation-error">
+            <NAlert type="error" size="small" :title="remoteStore.toolConfirmationError" closable @close="remoteStore.toolConfirmationError = ''" />
+          </div>
+        </div>
+      </div>
     </div>
     
     <!-- 加载状态 -->
-    <div v-if="store.isLoading" class="loading-indicator">
+    <div v-if="appStore.isLoading" class="loading-indicator">
       <div class="loading-avatar">
         <NAvatar round size="small" :style="{ backgroundColor: '#ececf1' }">
           <span style="color: #000">AI</span>
@@ -115,10 +221,10 @@ const {
     </div>
     
     <!-- 错误提示 -->
-    <div v-if="store.error" class="error-container">
-      <NAlert type="error" :title="store.error" closable @close="store.resetError()">
-        <template v-if="store.canRetry">
-          <NButton size="small" @click="retryLastMessage" :loading="store.isRetrying" style="margin-top: 8px">
+    <div v-if="appStore.error" class="error-container">
+      <NAlert type="error" :title="appStore.error" closable @close="appStore.resetError()">
+        <template v-if="appStore.canRetry">
+          <NButton size="small" @click="retryLastMessage" :loading="appStore.isRetrying" style="margin-top: 8px">
             重试
           </NButton>
         </template>
@@ -139,6 +245,9 @@ const {
   -ms-overflow-style: none;
   scroll-behavior: smooth;
   background-color: #ffffff;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .message-list::-webkit-scrollbar {
@@ -170,7 +279,7 @@ const {
 
 .message-content-wrapper {
   flex: 1;
-  max-width: calc(100% - 52px);
+  max-width: 100%;
 }
 
 .user-message .message-content-wrapper {
@@ -434,48 +543,48 @@ const {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 移动端适配 */
-@media (max-width: 768px) {
-  .message-list {
-    padding: 12px;
-    gap: 16px;
+  /* 移动端适配 */
+  @media (max-width: 768px) {
+    .message-list {
+      padding: 12px;
+      gap: 16px;
+    }
+    
+    .message-wrapper {
+      gap: 8px;
+    }
+    
+    .message-content-wrapper {
+      max-width: 100%;
+    }
+    
+    .message-content {
+      padding: 10px 14px;
+      font-size: 14px;
+    }
+    
+    .empty-state h3 {
+      font-size: 20px;
+    }
+    
+    .welcome-text {
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+    
+    .example-prompts {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    
+    .prompt {
+      padding: 10px 14px;
+      font-size: 13px;
+    }
+    
+    .message-content :deep(pre) {
+      padding: 12px;
+      font-size: 13px;
+    }
   }
-  
-  .message-wrapper {
-    gap: 8px;
-  }
-  
-  .message-content-wrapper {
-    max-width: calc(100% - 44px);
-  }
-  
-  .message-content {
-    padding: 10px 14px;
-    font-size: 14px;
-  }
-  
-  .empty-state h3 {
-    font-size: 20px;
-  }
-  
-  .welcome-text {
-    font-size: 14px;
-    margin-bottom: 24px;
-  }
-  
-  .example-prompts {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-  
-  .prompt {
-    padding: 10px 14px;
-    font-size: 13px;
-  }
-  
-  .message-content :deep(pre) {
-    padding: 12px;
-    font-size: 13px;
-  }
-}
 </style>
