@@ -296,18 +296,22 @@ const getToolConfirmationStatusTag = (status: string) => {
   font-size: 15px;
   position: relative;
   transition: all 0.2s ease;
+  max-width: 80%;
+  overflow-wrap: break-word;
 }
 
 .ai-message .message-content {
   background-color: #f7f7f8;
   color: #374151;
   border-top-left-radius: 4px;
+  max-width: 80%;
 }
 
 .user-message .message-content {
   background-color: #10a37f;
   color: white;
   border-top-right-radius: 4px;
+  max-width: 80%;
 }
 
 .message-content :deep(pre) {
@@ -585,6 +589,25 @@ const getToolConfirmationStatusTag = (status: string) => {
     .message-content :deep(pre) {
       padding: 12px;
       font-size: 13px;
+    }
+  }
+
+  /* 工具确认消息样式 */
+  .tool-confirmation-wrapper {
+    display: flex;
+    gap: 12px;
+    animation: fade-in 0.3s ease-in-out;
+  }
+
+  .tool-confirmation-content {
+    flex: 1;
+    max-width: 80%;
+  }
+
+  /* 移动端工具确认消息适配 */
+  @media (max-width: 768px) {
+    .tool-confirmation-content {
+      max-width: 85%;
     }
   }
 </style>
