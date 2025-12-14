@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useAppStore } from '../stores'
+import { useRemoteStore } from '../stores/remote-store'
 import { useChatCommands } from '../composables/useChatCommands'
 import { 
   NInput, NButton, NIcon, NTooltip, NPopover, NText,
@@ -8,10 +9,11 @@ import {
 } from 'naive-ui'
 import { 
   Send, Trash, TerminalOutline, Reload, ChevronUp, 
-  FlashOutline, Play, StopCircle
+  FlashOutline, Play, StopCircle, PauseCircle, RefreshCircle
 } from '@vicons/ionicons5'
 
 const store = useAppStore()
+const remoteStore = useRemoteStore()
 const {
   hasCommands,
   commandsCount,
@@ -50,10 +52,61 @@ const clearMessages = () => {
   store.clearMessages()
 }
 
-// 停止生成
-const stopGenerating = () => {
-  store.isLoading = false
-  store.loadingProgress = 0
+// 中断模型输出
+const interruptGeneration = async () => {
+  if (!store.isRemoteConnected) return
+  
+  try {
+    await remoteStore.sendInterrupt()
+    store.isLoading = false
+    store.loadingProgress = 0
+  } catch (err: any) {
+    console.error('中断生成失败:', err)
+  }
+}
+
+// 重新生成回复
+const regenerateResponse = async () => {
+  if (!store.isRemoteConnected || store.messages.length === 0) return
+  
+  try {
+    // 移除最后一条AI回复（如果有）
+    const lastMessageIndex = store.messages.length - 1
+    if (lastMessageIndex >= 0 && !store.messages[lastMessageIndex].isUser) {
+      store.messages.splice(lastMessageIndex, 1)
+    }
+    
+    // 发送重新生成请求
+    await remoteStore.sendRegenerate()
+    
+    // 重新生成后，重新开始加载状态
+    store.isLoading = true
+    store.loadingProgress = 0
+    
+    // 添加重新生成的视觉反馈
+    const feedbackId = Date.now().toString()
+    store.messages.push({
+      id: feedbackId,
+      content: '正在重新生成回复...',
+      isUser: false,
+      timestamp: Date.now(),
+      status: 'sending'
+    })
+    
+    // 模拟等待新回复（实际由远程服务器处理）
+    setTimeout(() => {
+      const messageIndex = store.messages.findIndex(m => m.id === feedbackId)
+      if (messageIndex !== -1) {
+        store.messages[messageIndex].content = '重新生成请求已发送到远程服务器，等待回复...'
+        store.messages[messageIndex].status = 'sent'
+      }
+    }, 500)
+    
+  } catch (err: any) {
+    console.error('重新生成失败:', err)
+    // 添加错误反馈
+    store.addMessage(`重新生成失败: ${err.message}`, false)
+  }
 }
 
     // 发送命令（带参数）
@@ -211,6 +264,42 @@ const quickSendCommandHandler = (commandName: string) => {
     
     <div class="input-wrapper">
       <div class="input-left-actions">
+        <!-- 中断按钮 -->
+        <NTooltip v-if="store.isRemoteConnected && store.isLoading" trigger="hover">
+          <template #trigger>
+            <NButton 
+              circle
+              @click="interruptGeneration"
+              type="warning"
+              size="medium"
+              class="interrupt-button"
+            >
+              <template #icon>
+                <NIcon :component="PauseCircle" size="16" />
+              </template>
+            </NButton>
+          </template>
+          中断模型输出
+        </NTooltip>
+
+        <!-- 重新生成按钮 -->
+        <NTooltip v-if="store.isRemoteConnected && !store.isLoading && store.messages.length > 0" trigger="hover">
+          <template #trigger>
+            <NButton 
+              circle
+              @click="regenerateResponse"
+              type="info"
+              size="medium"
+              class="regenerate-button"
+            >
+              <template #icon>
+                <NIcon :component="RefreshCircle" size="16" />
+              </template>
+            </NButton>
+          </template>
+          重新生成回复
+        </NTooltip>
+
         <!-- 命令按钮 -->
         <NTooltip v-if="store.isRemoteConnected && hasCommands" trigger="hover">
           <template #trigger>

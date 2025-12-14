@@ -336,6 +336,22 @@ export class RemoteClient {
   }
 
   /**
+   * 发送中断请求
+   * 用于中断当前正在进行的模型输出生成
+   */
+  async sendInterrupt(config?: RequestConfig): Promise<RemoteResponse> {
+    return this.sendRequest({ Interrupt: null }, config, false, false);
+  }
+
+  /**
+   * 发送重新生成请求
+   * 用于重新生成最后的回复
+   */
+  async sendRegenerate(config?: RequestConfig): Promise<RemoteResponse> {
+    return this.sendRequest({ Regenerate: null }, config, false, false);
+  }
+
+  /**
    * 获取连接状态
    */
   getStatus(): ConnectionStatus {

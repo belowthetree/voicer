@@ -1,5 +1,6 @@
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useAppStore } from '../stores'
+import { useRemoteStore } from '../stores/remote-store'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github-dark.css'
@@ -126,9 +127,20 @@ export function useChatMessages() {
     return store.messages[store.messages.length - 1].isUser
   })
 
-  // 停止生成
-  const stopGenerating = () => {
-    // 在实际应用中，这里会取消API请求
+  // 停止生成/中断模型输出
+  const stopGenerating = async () => {
+    // 如果远程连接，则发送中断请求
+    if (store.isRemoteConnected) {
+      try {
+        const remoteStore = useRemoteStore()
+        await remoteStore.sendInterrupt()
+      } catch (err: any) {
+        console.error('中断生成失败:', err)
+        // 如果中断失败，仍然停止本地加载状态
+      }
+    }
+    
+    // 停止本地加载状态
     store.isLoading = false
     store.loadingProgress = 0
   }

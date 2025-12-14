@@ -10,7 +10,9 @@ export type InputType =
   | { Instruction: { command: string; parameters: Record<string, any> } }
   | { File: { filename: string; content_type: string; data: string } }
   | { Multi: InputType[] }
-  | { GetCommands: null };
+  | { GetCommands: null }
+  | { Interrupt: null }
+  | { Regenerate: null };
 
 // 请求配置
 export interface RequestConfig {

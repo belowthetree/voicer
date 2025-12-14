@@ -2,7 +2,8 @@ import { ref, computed } from 'vue'
 import { useRemoteStore } from '../stores/remote-store'
 import { 
   Play, Terminal, Code, DocumentText, ArchiveOutline, GlobeOutline, CogOutline, Rocket,
-  StopCircle, Trash, Refresh, TerminalOutline, FlashOutline
+  StopCircle, Trash, Refresh, TerminalOutline, FlashOutline,
+  PauseCircle, RefreshCircle
 } from '@vicons/ionicons5'
 
 export function useChatCommands() {
@@ -60,7 +61,9 @@ export function useChatCommands() {
       'list': DocumentText,
       'create': Rocket,
       'update': Refresh,
-      'delete': Trash
+      'delete': Trash,
+      'interrupt': PauseCircle,
+      'regenerate': RefreshCircle
     }
     
     for (const [key, icon] of Object.entries(iconMap)) {
@@ -88,7 +91,9 @@ export function useChatCommands() {
       'list': 'info',
       'create': 'success',
       'update': 'warning',
-      'delete': 'error'
+      'delete': 'error',
+      'interrupt': 'warning',
+      'regenerate': 'info'
     }
     
     for (const [key, color] of Object.entries(colorMap)) {

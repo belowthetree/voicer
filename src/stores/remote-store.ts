@@ -229,7 +229,39 @@ export const useRemoteStore = defineStore('remote', () => {
       throw err
     }
   }
-  
+
+  // 发送中断请求
+  async function sendInterrupt(): Promise<void> {
+    if (!client.value || !isConnected.value) {
+      throw new Error('未连接到远程服务器')
+    }
+    
+    try {
+      await client.value.sendInterrupt(requestConfig)
+      messagesSent.value++
+    } catch (err: any) {
+      lastError.value = error.value
+      error.value = err.message || '发送中断请求失败'
+      throw err
+    }
+  }
+
+  // 发送重新生成请求
+  async function sendRegenerate(): Promise<void> {
+    if (!client.value || !isConnected.value) {
+      throw new Error('未连接到远程服务器')
+    }
+    
+    try {
+      await client.value.sendRegenerate(requestConfig)
+      messagesSent.value++
+    } catch (err: any) {
+      lastError.value = error.value
+      error.value = err.message || '发送重新生成请求失败'
+      throw err
+    }
+  }
+
   // 获取命令列表
   async function fetchCommands(): Promise<CommandDefinition[]> {
     if (!client.value || !isConnected.value) {
@@ -386,6 +418,8 @@ export const useRemoteStore = defineStore('remote', () => {
     disconnect,
     sendText,
     sendCommand,
+    sendInterrupt,
+    sendRegenerate,
     fetchCommands,
     refreshCommands,
     clearCommands,
