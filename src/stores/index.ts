@@ -25,7 +25,9 @@ export const useAppStore = defineStore('app', () => {
     type: 'text';
     content: string;
     isUser: boolean;
-    status?: 'sending' | 'sent' | 'error';
+    status?: 'sending' | 'sent' | 'error' | 'streaming';
+    isStreaming?: boolean;
+    streamId?: string; // 用于关联流式响应的唯一ID
   }
 
   interface ToolConfirmationMessage extends BaseMessage {
@@ -128,7 +130,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // 更新消息状态
-  function updateMessageStatus(id: string, status: 'sending' | 'sent' | 'error') {
+  function updateMessageStatus(id: string, status: 'sending' | 'sent' | 'error' | 'streaming') {
     const message = messages.value.find(m => m.id === id)
     if (message) {
       message.status = status
@@ -198,9 +200,9 @@ export const useAppStore = defineStore('app', () => {
       isLoading.value = true
       
       // 添加用户消息（如果不是重试）
-      let messageId = ''
+      let userMessageId = ''
       if (!isRetry) {
-        messageId = addMessage(content, true, 'sending')
+        userMessageId = addMessage(content, true, 'sending')
       }
       
       // 模拟进度
@@ -219,19 +221,71 @@ export const useAppStore = defineStore('app', () => {
           await remoteStore.connect()
         }
         
-        // 发送消息到远程服务器
-        aiResponse = await remoteStore.sendText(content)
+        // 创建AI回复消息（流式消息）
+        const aiMessageId = Date.now().toString() + '_stream'
+        const aiMessage: TextMessage = {
+          type: 'text',
+          id: aiMessageId,
+          content: '',
+          isUser: false,
+          timestamp: Date.now(),
+          status: 'streaming',
+          isStreaming: true,
+          streamId: aiMessageId
+        }
+        messages.value.push(aiMessage)
+        
+        // 创建流式处理器
+        const streamHandler = {
+          onChunk: (chunk: string) => {
+            console.log('收到流式块:', chunk)
+            // 更新AI消息内容
+            const messageIndex = messages.value.findIndex(m => m.id === aiMessageId)
+            if (messageIndex !== -1) {
+              const message = messages.value[messageIndex] as TextMessage
+              message.content += chunk
+              // 触发响应式更新
+              messages.value = [...messages.value]
+            }
+          },
+          onComplete: (fullText: string) => {
+            console.log('流式响应完成:', fullText)
+            // 更新AI消息状态
+            const messageIndex = messages.value.findIndex(m => m.id === aiMessageId)
+            if (messageIndex !== -1) {
+              const message = messages.value[messageIndex] as TextMessage
+              message.status = 'sent'
+              message.isStreaming = false
+              aiResponse = fullText
+              // 触发响应式更新
+              messages.value = [...messages.value]
+            }
+          },
+          onError: (error: Error) => {
+            console.error('流式响应错误:', error)
+            // 更新AI消息状态为错误
+            const messageIndex = messages.value.findIndex(m => m.id === aiMessageId)
+            if (messageIndex !== -1) {
+              const message = messages.value[messageIndex] as TextMessage
+              message.status = 'error'
+              message.isStreaming = false
+              // 触发响应式更新
+              messages.value = [...messages.value]
+            }
+            handleError(error)
+          }
+        }
+        
+        // 发送消息到远程服务器（使用流式处理）
+        aiResponse = await remoteStore.sendText(content, streamHandler)
         
         clearInterval(progressInterval)
         loadingProgress.value = 100
         
-        // 更新消息状态（如果不是重试）
-        if (!isRetry && messageId) {
-          updateMessageStatus(messageId, 'sent')
+        // 更新用户消息状态（如果不是重试）
+        if (!isRetry && userMessageId) {
+          updateMessageStatus(userMessageId, 'sent')
         }
-        
-        // 添加AI回复
-        addMessage(aiResponse, false)
         
         // 重置重试计数
         if (isRetry) {
@@ -254,12 +308,12 @@ export const useAppStore = defineStore('app', () => {
         clearInterval(progressInterval)
         loadingProgress.value = 100
         
-        // 更新消息状态（如果不是重试）
-        if (!isRetry && messageId) {
-          updateMessageStatus(messageId, 'sent')
+        // 更新用户消息状态（如果不是重试）
+        if (!isRetry && userMessageId) {
+          updateMessageStatus(userMessageId, 'sent')
         }
         
-        // 添加AI回复
+        // 添加AI回复（非流式）
         addMessage(response.reply, false)
         
         // 重置重试计数
@@ -270,7 +324,7 @@ export const useAppStore = defineStore('app', () => {
         return response
       }
     } catch (err: any) {
-      // 如果不是重试，将最后一条消息标记为错误
+      // 如果不是重试，将最后一条用户消息标记为错误
       if (!isRetry && messages.value.length > 0) {
         const lastMessage = messages.value[messages.value.length - 1]
         if (lastMessage.type === 'text' && lastMessage.isUser) {

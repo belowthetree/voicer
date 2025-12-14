@@ -162,6 +162,24 @@ export const useRemoteStore = defineStore('remote', () => {
       
       console.log(`工具确认响应: ${name} - ${approved ? '已批准' : '已拒绝'}`, reason)
     })
+    
+    // 监听流式响应块
+    client.value.on(RemoteEventType.STREAM_CHUNK, (eventData) => {
+      const { requestId, chunk } = eventData.data
+      console.log('收到流式响应块:', { requestId, chunk })
+      
+      // 发出流式块事件，供应用层处理
+      // 这里可以添加自定义逻辑，比如更新UI
+    })
+    
+    // 监听流式响应完成
+    client.value.on(RemoteEventType.STREAM_COMPLETE, (eventData) => {
+      const { requestId, token_usage, interrupted } = eventData.data
+      console.log('流式响应完成:', { requestId, token_usage, interrupted })
+      
+      // 发出流式完成事件，供应用层处理
+      // 这里可以添加自定义逻辑，比如更新统计信息
+    })
   }
   
   // 连接到远程服务器
@@ -197,7 +215,6 @@ export const useRemoteStore = defineStore('remote', () => {
   // 发送文本消息
   async function sendText(
     text: string,
-    stream = false,
     streamHandler?: StreamHandler
   ): Promise<string> {
     if (!client.value || !isConnected.value) {
@@ -208,7 +225,6 @@ export const useRemoteStore = defineStore('remote', () => {
       const response = await client.value.sendText(
         text,
         requestConfig,
-        stream,
         useTools.value,
         streamHandler
       )
@@ -231,7 +247,10 @@ export const useRemoteStore = defineStore('remote', () => {
           }
         }
         return texts.join('\n')
+      } else if ("StreamComplete" in response.response) {
+        return "";
       } else {
+        console.log(response.response)
         throw new Error('不支持的响应类型')
       }
     } catch (err: any) {
@@ -259,7 +278,6 @@ export const useRemoteStore = defineStore('remote', () => {
         commandName,
         parameters,
         requestConfig,
-        stream,
         useTools.value
       )
       

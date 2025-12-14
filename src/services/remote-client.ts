@@ -25,12 +25,13 @@ export class RemoteClient {
   private socket: WebSocket | null = null;
   private status: ConnectionStatus = ConnectionStatus.DISCONNECTED;
   private eventListeners: Map<RemoteEventType, ((data: any) => void)[]> = new Map();
-  private reconnectTimer: number | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private pendingRequests: Map<string, {
     resolve: (value: RemoteResponse) => void;
     reject: (reason: any) => void;
     streamHandler?: StreamHandler;
+    accumulatedStream?: string[]; // 用于累积流式数据
   }> = new Map();
 
   constructor(config: RemoteClientConfig) {
@@ -123,7 +124,6 @@ export class RemoteClient {
   async sendRequest(
     input: InputType,
     config?: RequestConfig,
-    stream = false,
     useTools = true,
     streamHandler?: StreamHandler
   ): Promise<RemoteResponse> {
@@ -136,7 +136,6 @@ export class RemoteClient {
       request_id: requestId,
       input,
       config,
-      stream,
       use_tools: useTools
     };
 
@@ -174,11 +173,10 @@ export class RemoteClient {
   async sendText(
     text: string,
     config?: RequestConfig,
-    stream = false,
     useTools = true,
     streamHandler?: StreamHandler
   ): Promise<RemoteResponse> {
-    return this.sendRequest({ Text: text }, config, stream, useTools, streamHandler);
+    return this.sendRequest({ Text: text }, config, useTools, streamHandler);
   }
 
   /**
@@ -188,10 +186,9 @@ export class RemoteClient {
     data: string,
     mimeType?: string,
     config?: RequestConfig,
-    stream = false,
     useTools = true
   ): Promise<RemoteResponse> {
-    return this.sendRequest({ Image: { data, mime_type: mimeType } }, config, stream, useTools);
+    return this.sendRequest({ Image: { data, mime_type: mimeType } }, config, useTools);
   }
 
   /**
@@ -201,10 +198,9 @@ export class RemoteClient {
     command: string,
     parameters: Record<string, any>,
     config?: RequestConfig,
-    stream = false,
     useTools = true
   ): Promise<RemoteResponse> {
-    return this.sendRequest({ Instruction: { command, parameters } }, config, stream, useTools);
+    return this.sendRequest({ Instruction: { command, parameters } }, config, useTools);
   }
 
   /**
@@ -215,10 +211,9 @@ export class RemoteClient {
     contentType: string,
     data: string,
     config?: RequestConfig,
-    stream = false,
     useTools = true
   ): Promise<RemoteResponse> {
-    return this.sendRequest({ File: { filename, content_type: contentType, data } }, config, stream, useTools);
+    return this.sendRequest({ File: { filename, content_type: contentType, data } }, config, useTools);
   }
 
   /**
@@ -340,7 +335,7 @@ export class RemoteClient {
    * 用于中断当前正在进行的模型输出生成
    */
   async sendInterrupt(config?: RequestConfig): Promise<RemoteResponse> {
-    return this.sendRequest({ Interrupt: null }, config, false, false);
+    return this.sendRequest({ Interrupt: null }, config, false);
   }
 
   /**
@@ -348,7 +343,7 @@ export class RemoteClient {
    * 用于重新生成最后的回复
    */
   async sendRegenerate(config?: RequestConfig): Promise<RemoteResponse> {
-    return this.sendRequest({ Regenerate: null }, config, false, false);
+    return this.sendRequest({ Regenerate: null }, config, false);
   }
 
   /**
@@ -502,21 +497,70 @@ export class RemoteClient {
         return;
       }
       
+      // 处理 StreamComplete 消息
+      if ('StreamComplete' in response.response) {
+        console.log('处理 StreamComplete:', response.response.StreamComplete);
+        this.emitEvent(RemoteEventType.STREAM_COMPLETE, {
+          requestId,
+          ...response.response.StreamComplete
+        });
+        
+        // 如果有对应的请求处理器，完成请求
+        if (requestHandler) {
+          console.log('StreamComplete 完成请求:', requestId);
+          
+          // 如果有累积的流式数据
+          if (requestHandler.accumulatedStream) {
+            const fullText = requestHandler.accumulatedStream.join('');
+            
+            // 如果有 streamHandler，调用 onComplete
+            if (requestHandler.streamHandler) {
+              requestHandler.streamHandler.onComplete?.(fullText);
+            }
+            
+            // 创建一个包含完整文本的响应对象，以便调用者可以获取完整的响应
+            // 注意：我们保留原始的 StreamComplete 响应，但添加完整的文本作为额外信息
+            const enhancedResponse: RemoteResponse = {
+              ...response,
+              // 我们可以考虑在这里添加完整的文本，但需要保持类型兼容性
+              // 目前先保持原样，调用者可以通过事件监听器获取流式数据
+            };
+            
+            this.pendingRequests.delete(requestId);
+            requestHandler.resolve(enhancedResponse);
+          } else {
+            // 没有累积的流式数据，直接完成请求
+            this.pendingRequests.delete(requestId);
+            requestHandler.resolve(response);
+          }
+        }
+        return;
+      }
+      
       if (requestHandler) {
-        console.log('找到请求处理器:', requestId);
+        console.log('找到请求处理器:', requestId, requestHandler.streamHandler);
         // 处理流式响应
-        if ('Stream' in response.response && requestHandler.streamHandler) {
+        if ('Stream' in response.response) {
           console.log('处理流式响应');
-          const streamChunks = response.response.Stream;
-          streamChunks.forEach(chunk => {
+          const chunk = response.response.Stream;
+          
+          // 累积流式数据（无论是否有 streamHandler）
+          if (!requestHandler.accumulatedStream) {
+            requestHandler.accumulatedStream = [];
+          }
+          requestHandler.accumulatedStream.push(chunk);
+          
+          // 如果有 streamHandler，处理每个流式块
+          if (requestHandler.streamHandler) {
             requestHandler.streamHandler?.onChunk?.(chunk);
             this.emitEvent(RemoteEventType.STREAM_CHUNK, { requestId, chunk });
-          });
+          } else {
+            // 即使没有 streamHandler，也发出 STREAM_CHUNK 事件
+            this.emitEvent(RemoteEventType.STREAM_CHUNK, { requestId, chunk });
+          }
           
-          const fullText = streamChunks.join('');
-          requestHandler.streamHandler?.onComplete?.(fullText);
-          this.pendingRequests.delete(requestId);
-          requestHandler.resolve(response);
+          // 注意：这里不调用 onComplete，也不删除 pendingRequests，等待 StreamComplete 消息
+          // 也不调用 resolve，等待 StreamComplete 消息
         }
         // 处理普通响应
         else {

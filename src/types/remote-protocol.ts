@@ -35,10 +35,11 @@ export interface RemoteRequest {
 // 响应内容
 export type ResponseContent =
   | { Text: string }
-  | { Stream: string[] }
+  | { Stream: string }
   | { ToolCall: { name: string; arguments: Record<string, any> } }
   | { ToolResult: { name: string; result: Record<string, any> } }
   | { ToolConfirmationRequest: { name: string; arguments: Record<string, any>; description?: string } }
+  | { StreamComplete: { token_usage: TokenUsage; interrupted: boolean } }
   | { Multi: ResponseContent[] };
 
 // Token 使用统计
@@ -89,6 +90,7 @@ export enum RemoteEventType {
   MESSAGE = 'message',
   ERROR = 'error',
   STREAM_CHUNK = 'stream_chunk',
+  STREAM_COMPLETE = 'stream_complete',
   TOOL_CALL = 'tool_call',
   TOOL_RESULT = 'tool_result',
   TOOL_CONFIRMATION_REQUEST = 'tool_confirmation_request',
