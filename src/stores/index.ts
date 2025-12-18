@@ -39,7 +39,15 @@ export const useAppStore = defineStore('app', () => {
     status: 'pending' | 'approved' | 'rejected';
   }
 
-  type Message = TextMessage | ToolConfirmationMessage;
+  interface TurnConfirmationMessage extends BaseMessage {
+    type: 'turn-confirmation';
+    requestId: string;
+    message: string;
+    description?: string;
+    status: 'pending' | 'confirmed' | 'rejected';
+  }
+
+  type Message = TextMessage | ToolConfirmationMessage | TurnConfirmationMessage;
 
   // 状态
   const messages = ref<Message[]>([]);
@@ -118,6 +126,51 @@ export const useAppStore = defineStore('app', () => {
     const message = messages.value.find(m => 
       m.type === 'tool-confirmation' && m.requestId === requestId
     ) as ToolConfirmationMessage | undefined
+    
+    if (message) {
+      message.status = status
+    }
+  }
+
+  // 添加对话轮次确认消息
+  function addTurnConfirmationMessage(
+    requestId: string,
+    message: string,
+    description?: string
+  ) {
+    console.log('appStore.addTurnConfirmationMessage被调用:', {
+      requestId,
+      message,
+      description
+    })
+    
+    const id = Date.now().toString()
+    const turnMessage: TurnConfirmationMessage = {
+      type: 'turn-confirmation',
+      id,
+      requestId,
+      message,
+      description,
+      timestamp: Date.now(),
+      status: 'pending'
+    }
+    
+    console.log('创建的对话轮次确认消息对象:', turnMessage)
+    console.log('添加前消息数量:', messages.value.length)
+    
+    messages.value.push(turnMessage)
+    
+    console.log('添加后消息数量:', messages.value.length)
+    console.log('最后一条消息:', messages.value[messages.value.length - 1])
+    
+    return id
+  }
+
+  // 更新对话轮次确认消息状态
+  function updateTurnConfirmationStatus(requestId: string, status: 'confirmed' | 'rejected') {
+    const message = messages.value.find(m => 
+      m.type === 'turn-confirmation' && m.requestId === requestId
+    ) as TurnConfirmationMessage | undefined
     
     if (message) {
       message.status = status
@@ -402,6 +455,8 @@ export const useAppStore = defineStore('app', () => {
     addTextMessage,
     addToolConfirmationMessage,
     updateToolConfirmationStatus,
+    addTurnConfirmationMessage,
+    updateTurnConfirmationStatus,
     sendMessageToAI,
     clearMessages,
     setApiUrl,

@@ -22,6 +22,13 @@ const {
   marked 
 } = useChatMessages()
 
+// 计算是否有正在流式的消息
+const hasStreamingMessage = computed(() => {
+  return appStore.messages.some(m => 
+    m.type === 'text' && m.status === 'streaming'
+  )
+})
+
 // 处理工具确认
 const handleApproveToolCall = (requestId: string, name: string, arguments_: Record<string, any>) => {
   remoteStore.approveToolCall(requestId, name, arguments_, '用户已批准')
@@ -29,6 +36,15 @@ const handleApproveToolCall = (requestId: string, name: string, arguments_: Reco
 
 const handleRejectToolCall = (requestId: string, name: string, arguments_: Record<string, any>) => {
   remoteStore.rejectToolCall(requestId, name, arguments_, '用户已拒绝')
+}
+
+// 处理对话轮次确认
+const handleConfirmTurn = (requestId: string) => {
+  remoteStore.confirmTurn(requestId, '用户已确认继续对话')
+}
+
+const handleRejectTurn = (requestId: string) => {
+  remoteStore.rejectTurn(requestId, '用户已拒绝继续对话')
 }
 
 // 格式化工具参数为可读字符串
@@ -97,7 +113,7 @@ const getToolConfirmationStatusTag = (status: string) => {
         </div>
         <div class="message-content-wrapper">
           <div class="message-content" v-html="message.isUser ? message.content : marked.parse(message.content)"></div>
-          <div class="message-actions" v-if="!message.isUser && message.status !== 'sending'">
+          <div class="message-actions" v-if="!message.isUser && message.status !== 'sending' && message.status !== 'streaming'">
             <NButton text size="tiny" @click="copyMessage(message.content, message.id)">
               <template #icon>
                 <NIcon size="14">
@@ -108,10 +124,23 @@ const getToolConfirmationStatusTag = (status: string) => {
               {{ copiedMessageId === message.id ? '已复制' : '复制' }}
             </NButton>
           </div>
+          <!-- 流式消息的停止按钮 -->
+          <div class="message-actions" v-if="!message.isUser && message.status === 'streaming'">
+            <NButton text size="tiny" @click="stopGenerating" type="error">
+              <template #icon>
+                <NIcon size="12"><StopCircle /></NIcon>
+              </template>
+              停止输出
+            </NButton>
+          </div>
           <div class="message-meta">
             <div class="message-status" v-if="message.status === 'sending'">
               <NSpin size="small" />
               <span>发送中...</span>
+            </div>
+            <div class="message-status" v-else-if="message.status === 'streaming'">
+              <NSpin size="small" />
+              <span>正在输出...</span>
             </div>
             <div class="message-status error" v-else-if="message.status === 'error'">
               <NIcon size="14"><WarningOutline /></NIcon>
@@ -194,10 +223,72 @@ const getToolConfirmationStatusTag = (status: string) => {
           </div>
         </div>
       </div>
+      
+      <!-- 对话轮次确认消息 -->
+      <div v-else-if="message.type === 'turn-confirmation'" class="turn-confirmation-wrapper">
+        <div class="message-avatar">
+          <NAvatar round size="small" :style="{ backgroundColor: '#6f42c1' }">
+            <NIcon size="16" :style="{ color: 'white' }">
+              <InformationCircle />
+            </NIcon>
+          </NAvatar>
+        </div>
+        <div class="turn-confirmation-content">
+          <NCard size="small" :bordered="false" :style="{ backgroundColor: '#f3e5ff', borderRadius: '12px' }">
+            <div class="turn-confirmation-header">
+              <div class="turn-confirmation-title">
+                <span class="turn-message">{{ message.message }}</span>
+                <NTag :type="getToolConfirmationStatusTag(message.status).type" size="small" round>
+                  {{ getToolConfirmationStatusTag(message.status).text }}
+                </NTag>
+              </div>
+              <div class="turn-description" v-if="message.description">
+                {{ message.description }}
+              </div>
+            </div>
+            
+            <div class="turn-confirmation-actions" v-if="message.status === 'pending'">
+              <div class="action-buttons">
+                <NButton 
+                  type="primary" 
+                  size="small" 
+                  @click="handleConfirmTurn(message.requestId)"
+                  :loading="remoteStore.turnConfirmationError !== ''"
+                >
+                  <template #icon>
+                    <NIcon><CheckmarkCircle /></NIcon>
+                  </template>
+                  确认继续
+                </NButton>
+                <NButton 
+                  type="error" 
+                  size="small" 
+                  @click="handleRejectTurn(message.requestId)"
+                  :loading="remoteStore.turnConfirmationError !== ''"
+                >
+                  <template #icon>
+                    <NIcon><CloseCircle /></NIcon>
+                  </template>
+                  拒绝
+                </NButton>
+              </div>
+            </div>
+            
+            <div class="turn-confirmation-meta">
+              <div class="turn-time">{{ new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</div>
+            </div>
+          </NCard>
+          
+          <!-- 错误提示 -->
+          <div v-if="remoteStore.turnConfirmationError" class="turn-confirmation-error">
+            <NAlert type="error" size="small" :title="remoteStore.turnConfirmationError" closable @close="remoteStore.turnConfirmationError = ''" />
+          </div>
+        </div>
+      </div>
     </div>
     
-    <!-- 加载状态 -->
-    <div v-if="appStore.isLoading" class="loading-indicator">
+    <!-- 加载状态 - 仅在没有流式消息时显示 -->
+    <div v-if="appStore.isLoading && !hasStreamingMessage" class="loading-indicator">
       <div class="loading-avatar">
         <NAvatar round size="small" :style="{ backgroundColor: '#ececf1' }">
           <span style="color: #000">AI</span>
@@ -208,14 +299,6 @@ const getToolConfirmationStatusTag = (status: string) => {
           <div class="typing-dot"></div>
           <div class="typing-dot"></div>
           <div class="typing-dot"></div>
-        </div>
-        <div class="loading-actions">
-          <NButton text size="tiny" @click="stopGenerating">
-            <template #icon>
-              <NIcon size="12"><StopCircle /></NIcon>
-            </template>
-            停止生成
-          </NButton>
         </div>
       </div>
     </div>
@@ -604,10 +687,68 @@ const getToolConfirmationStatusTag = (status: string) => {
     max-width: 80%;
   }
 
-  /* 移动端工具确认消息适配 */
+  /* 对话轮次确认消息样式 */
+  .turn-confirmation-wrapper {
+    display: flex;
+    gap: 12px;
+    animation: fade-in 0.3s ease-in-out;
+  }
+
+  .turn-confirmation-content {
+    flex: 1;
+    max-width: 80%;
+  }
+
+  .turn-confirmation-header {
+    margin-bottom: 12px;
+  }
+
+  .turn-confirmation-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .turn-message {
+    font-weight: 600;
+    color: #6f42c1;
+    font-size: 15px;
+  }
+
+  .turn-description {
+    font-size: 13px;
+    color: #666;
+    margin-top: 4px;
+  }
+
+  .turn-confirmation-actions {
+    margin-top: 12px;
+  }
+
+  .turn-confirmation-meta {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #999;
+    text-align: right;
+  }
+
+  .turn-confirmation-error {
+    margin-top: 8px;
+  }
+
+  /* 移动端对话轮次确认消息适配 */
   @media (max-width: 768px) {
     .tool-confirmation-content {
       max-width: 85%;
+    }
+    
+    .turn-confirmation-content {
+      max-width: 85%;
+    }
+    
+    .turn-message {
+      font-size: 14px;
     }
   }
 </style>

@@ -450,6 +450,47 @@ export class RemoteClient {
     });
   }
 
+  /**
+   * 发送对话轮次确认响应
+   */
+  async sendTurnConfirmationResponse(
+    requestId: string,
+    confirmed: boolean,
+    reason?: string
+  ): Promise<void> {
+    if (this.status !== ConnectionStatus.CONNECTED) {
+      throw new Error('未连接到服务器');
+    }
+
+    const request = {
+      request_id: requestId,
+      input: {
+        TurnConfirmationResponse: {
+          confirmed,
+          reason
+        }
+      } as any,
+      stream: false,
+      use_tools: false
+    };
+
+    return new Promise((resolve, reject) => {
+      // 设置请求超时
+      const timeoutId = setTimeout(() => {
+        reject(new Error('发送对话轮次确认响应超时'));
+      }, this.config.timeout || 30000);
+
+      try {
+        this.socket?.send(JSON.stringify(request));
+        clearTimeout(timeoutId);
+        resolve();
+      } catch (error) {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
+    });
+  }
+
   // 私有方法
 
   private setStatus(status: ConnectionStatus): void {
@@ -483,6 +524,17 @@ export class RemoteClient {
           ...response.response.ToolConfirmationRequest
         });
         // 工具确认请求不会立即完成，等待用户确认
+        return;
+      }
+      
+      // 处理对话轮次确认请求（无论是否有请求处理器）
+      if ('TurnConfirmationRequest' in response.response) {
+        console.log('处理对话轮次确认请求:', response.response.TurnConfirmationRequest);
+        this.emitEvent(RemoteEventType.TURN_CONFIRMATION_REQUEST, {
+          requestId,
+          ...response.response.TurnConfirmationRequest
+        });
+        // 对话轮次确认请求不会立即完成，等待用户确认
         return;
       }
       

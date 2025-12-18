@@ -39,6 +39,7 @@ export type ResponseContent =
   | { ToolCall: { name: string; arguments: Record<string, any> } }
   | { ToolResult: { name: string; result: Record<string, any> } }
   | { ToolConfirmationRequest: { name: string; arguments: Record<string, any>; description?: string } }
+  | { TurnConfirmationRequest: { message: string; description?: string } }
   | { StreamComplete: { token_usage: TokenUsage; interrupted: boolean } }
   | { Multi: ResponseContent[] };
 
@@ -62,6 +63,14 @@ export interface ToolConfirmationResponse {
   name: string;
   arguments: Record<string, any>;
   approved: boolean;
+  reason?: string;
+}
+
+// 对话轮次确认响应
+export interface TurnConfirmationResponse {
+  /// 是否确认重置对话轮次
+  confirmed: boolean;
+  /// 可选的确认原因
   reason?: string;
 }
 
@@ -94,7 +103,9 @@ export enum RemoteEventType {
   TOOL_CALL = 'tool_call',
   TOOL_RESULT = 'tool_result',
   TOOL_CONFIRMATION_REQUEST = 'tool_confirmation_request',
-  TOOL_CONFIRMATION_RESPONSE = 'tool_confirmation_response'
+  TOOL_CONFIRMATION_RESPONSE = 'tool_confirmation_response',
+  TURN_CONFIRMATION_REQUEST = 'turn_confirmation_request',
+  TURN_CONFIRMATION_RESPONSE = 'turn_confirmation_response'
 }
 
 // 事件数据

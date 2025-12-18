@@ -144,6 +144,23 @@ export function useChatMessages() {
     // 停止本地加载状态
     store.isLoading = false
     store.loadingProgress = 0
+    
+    // 找到所有正在流式的AI消息并更新状态
+    const streamingMessages = store.messages.filter(m => 
+      m.type === 'text' && m.status === 'streaming'
+    )
+    
+    streamingMessages.forEach(message => {
+      // 直接更新消息状态
+      const messageIndex = store.messages.findIndex(m => m.id === message.id)
+      if (messageIndex !== -1) {
+        store.messages[messageIndex].status = 'sent'
+        // 移除流式标记
+        if ('isStreaming' in store.messages[messageIndex]) {
+          store.messages[messageIndex].isStreaming = false
+        }
+      }
+    })
   }
 
   return {

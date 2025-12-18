@@ -12,7 +12,8 @@ import type {
   StreamHandler,
   CommandDefinition,
   CommandListResponse,
-  ToolConfirmationResponse 
+  ToolConfirmationResponse,
+  TurnConfirmationResponse 
 } from '../types/remote-protocol'
 import { ConnectionStatus, RemoteEventType } from '../types/remote-protocol'
 import { useAppStore } from './index'
@@ -74,7 +75,16 @@ export const useRemoteStore = defineStore('remote', () => {
     timestamp: number;
   }>>([])
   
+  // 对话轮次确认相关状态
+  const pendingTurnConfirmations = ref<Array<{
+    requestId: string;
+    message: string;
+    description?: string;
+    timestamp: number;
+  }>>([])
+  
   const toolConfirmationError = ref('')
+  const turnConfirmationError = ref('')
   
   // 应用存储实例
   const appStore = useAppStore()
@@ -180,6 +190,50 @@ export const useRemoteStore = defineStore('remote', () => {
       // 发出流式完成事件，供应用层处理
       // 这里可以添加自定义逻辑，比如更新统计信息
     })
+    
+    // 监听对话轮次确认请求
+    client.value.on(RemoteEventType.TURN_CONFIRMATION_REQUEST, (eventData) => {
+      console.log('远程存储收到TURN_CONFIRMATION_REQUEST事件:', eventData)
+      const { requestId, message, description } = eventData.data
+      
+      console.log(`处理对话轮次确认请求: ${message}`, {
+        requestId,
+        message,
+        description
+      })
+      
+      // 添加到待确认列表
+      pendingTurnConfirmations.value.push({
+        requestId,
+        message,
+        description,
+        timestamp: Date.now()
+      })
+      
+      console.log('添加到对话轮次待确认列表后，当前数量:', pendingTurnConfirmations.value.length)
+      
+      // 添加到消息列表
+      console.log('调用appStore.addTurnConfirmationMessage...')
+      appStore.addTurnConfirmationMessage(requestId, message, description)
+      
+      console.log(`收到对话轮次确认请求: ${message}`)
+    })
+    
+    // 监听对话轮次确认响应
+    client.value.on(RemoteEventType.TURN_CONFIRMATION_RESPONSE, (eventData) => {
+      const { requestId, confirmed, reason } = eventData.data
+      
+      // 从待确认列表中移除
+      const index = pendingTurnConfirmations.value.findIndex(
+        item => item.requestId === requestId
+      )
+      
+      if (index !== -1) {
+        pendingTurnConfirmations.value.splice(index, 1)
+      }
+      
+      console.log(`对话轮次确认响应: ${confirmed ? '已确认' : '已拒绝'}`, reason)
+    })
   }
   
   // 连接到远程服务器
@@ -235,7 +289,12 @@ export const useRemoteStore = defineStore('remote', () => {
       if ('Text' in response.response) {
         return response.response.Text
       } else if ('Stream' in response.response) {
-        return response.response.Stream.join('')
+        const streamData = response.response.Stream
+        if (Array.isArray(streamData)) {
+          return streamData.join('')
+        } else {
+          return String(streamData)
+        }
       } else if ('Multi' in response.response) {
         // 处理复合响应
         const texts: string[] = []
@@ -243,14 +302,27 @@ export const useRemoteStore = defineStore('remote', () => {
           if ('Text' in item) {
             texts.push(item.Text)
           } else if ('Stream' in item) {
-            texts.push(item.Stream.join(''))
+            const streamData = item.Stream
+            if (Array.isArray(streamData)) {
+              texts.push(streamData.join(''))
+            } else {
+              texts.push(String(streamData))
+            }
           }
         }
         return texts.join('\n')
       } else if ("StreamComplete" in response.response) {
         return "";
+      } else if ('ToolConfirmationRequest' in response.response) {
+        // 工具确认请求已经在事件监听器中处理，这里返回空字符串
+        console.log('收到工具确认请求，已在事件监听器中处理')
+        return ""
+      } else if ('TurnConfirmationRequest' in response.response) {
+        // 对话轮次确认请求已经在事件监听器中处理，这里返回空字符串
+        console.log('收到对话轮次确认请求，已在事件监听器中处理')
+        return ""
       } else {
-        console.log(response.response)
+        console.log('不支持的响应类型:', response.response)
         throw new Error('不支持的响应类型')
       }
     } catch (err: any) {
@@ -288,7 +360,12 @@ export const useRemoteStore = defineStore('remote', () => {
       if ('Text' in response.response) {
         return response.response.Text
       } else if ('Stream' in response.response) {
-        return response.response.Stream.join('')
+        const streamData = response.response.Stream
+        if (Array.isArray(streamData)) {
+          return streamData.join('')
+        } else {
+          return String(streamData)
+        }
       } else if ('Multi' in response.response) {
         // 处理复合响应
         const texts: string[] = []
@@ -296,7 +373,12 @@ export const useRemoteStore = defineStore('remote', () => {
           if ('Text' in item) {
             texts.push(item.Text)
           } else if ('Stream' in item) {
-            texts.push(item.Stream.join(''))
+            const streamData = item.Stream
+            if (Array.isArray(streamData)) {
+              texts.push(streamData.join(''))
+            } else {
+              texts.push(String(streamData))
+            }
           }
         }
         return texts.join('\n')
@@ -423,6 +505,87 @@ export const useRemoteStore = defineStore('remote', () => {
   const pendingToolConfirmationsCount = computed(() => 
     pendingToolConfirmations.value.length
   )
+  
+  // 发送对话轮次确认响应
+  async function sendTurnConfirmationResponse(
+    requestId: string,
+    confirmed: boolean,
+    reason?: string
+  ): Promise<void> {
+    if (!client.value || !isConnected.value) {
+      throw new Error('未连接到远程服务器')
+    }
+    
+    turnConfirmationError.value = ''
+    
+    try {
+      await client.value.sendTurnConfirmationResponse(
+        requestId,
+        confirmed,
+        reason
+      )
+      
+      // 从待确认列表中移除
+      const index = pendingTurnConfirmations.value.findIndex(
+        item => item.requestId === requestId
+      )
+      
+      if (index !== -1) {
+        pendingTurnConfirmations.value.splice(index, 1)
+      }
+      
+      // 更新消息状态
+      appStore.updateTurnConfirmationStatus(requestId, confirmed ? 'confirmed' : 'rejected')
+      
+      console.log(`已发送对话轮次确认响应: ${confirmed ? '已确认' : '已拒绝'}`)
+    } catch (err: any) {
+      turnConfirmationError.value = err.message || '发送对话轮次确认响应失败'
+      throw err
+    }
+  }
+  
+  // 确认对话轮次
+  async function confirmTurn(
+    requestId: string,
+    reason?: string
+  ): Promise<void> {
+    return sendTurnConfirmationResponse(requestId, true, reason)
+  }
+  
+  // 拒绝对话轮次
+  async function rejectTurn(
+    requestId: string,
+    reason?: string
+  ): Promise<void> {
+    return sendTurnConfirmationResponse(requestId, false, reason)
+  }
+  
+  // 获取待确认的对话轮次请求
+  function getPendingTurnConfirmations() {
+    return pendingTurnConfirmations.value
+  }
+  
+  // 清空待确认的对话轮次请求
+  function clearPendingTurnConfirmations(): void {
+    pendingTurnConfirmations.value = []
+  }
+  
+  // 对话轮次确认相关计算属性
+  const hasPendingTurnConfirmations = computed(() => 
+    pendingTurnConfirmations.value.length > 0
+  )
+  
+  const pendingTurnConfirmationsCount = computed(() => 
+    pendingTurnConfirmations.value.length
+  )
+  
+  const turnConfirmationsByRequestId = computed(() => {
+    const result: Record<string, typeof pendingTurnConfirmations.value[0]> = {}
+    pendingTurnConfirmations.value.forEach(item => {
+      result[item.requestId] = item
+    })
+    return result
+  })
 
   // 获取命令列表
   async function fetchCommands(): Promise<CommandDefinition[]> {
@@ -572,6 +735,10 @@ export const useRemoteStore = defineStore('remote', () => {
     pendingToolConfirmations,
     toolConfirmationError,
     
+    // 对话轮次确认状态
+    pendingTurnConfirmations,
+    turnConfirmationError,
+    
     // 统计
     connectionAttempts,
     successfulConnections,
@@ -592,6 +759,11 @@ export const useRemoteStore = defineStore('remote', () => {
     hasPendingToolConfirmations,
     pendingToolConfirmationsCount,
     toolConfirmationsByRequestId,
+    
+    // 对话轮次确认计算属性
+    hasPendingTurnConfirmations,
+    pendingTurnConfirmationsCount,
+    turnConfirmationsByRequestId,
     
     // 方法
     connect,
@@ -615,6 +787,13 @@ export const useRemoteStore = defineStore('remote', () => {
     approveToolCall,
     rejectToolCall,
     getPendingToolConfirmations,
-    clearPendingToolConfirmations
+    clearPendingToolConfirmations,
+    
+    // 对话轮次确认方法
+    sendTurnConfirmationResponse,
+    confirmTurn,
+    rejectTurn,
+    getPendingTurnConfirmations,
+    clearPendingTurnConfirmations
   }
 })

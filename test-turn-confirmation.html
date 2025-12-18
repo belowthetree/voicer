@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>对话轮次确认协议测试</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 20px;
+        }
+
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .section h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .section p {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .input-group input,
+        .input-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: monospace;
+        }
+
+        .input-group textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .output {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .output .timestamp {
+            color: #888;
+            font-size: 11px;
+        }
+
+        .output .success {
+            color: #4ec9b0;
+        }
+
+        .output .error {
+            color: #f48771;
+        }
+
+        .output .info {
+            color: #9cdcfe;
+        }
+
+        .output .warning {
+            color: #dcdcaa;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .status.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status.confirmed {
+            background: #d1edff;
+            color: #004085;
+        }
+
+        .status.rejected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status.approved {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .divider {
+            height: 1px;
+            background: #e0e0e0;
+            margin: 15px 0;
+        }
+
+        .example-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .example-buttons button {
+            min-width: auto;
+            font-size: 12px;
+            padding: 8px;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #dc3545;
+        }
+
+        .status-dot.connected {
+            background: #28a745;
+        }
+
+        .status-dot.connecting {
+            background: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .protocol-info {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .protocol-info strong {
+            color: #004085;
+        }
+
+        .protocol-info code {
+            background: rgba(0,0,0,0.05);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔄 对话轮次确认协议测试</h1>
+            <p>验证 TurnConfirmationResponse 协议的完整实现</p>
+        </div>
+
+        <div class="content">
+            <!-- 连接状态 -->
+            <div class="connection-status">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">未连接</span>
+                <button onclick="connectServer()" style="margin-left: auto; padding: 4px 8px; font-size: 12px;">连接</button>
+            </div>
+
+            <!-- 协议说明 -->
+            <div class="protocol-info">
+                <strong>协议格式：</strong><br>
+                TurnConfirmationResponse {<br>
+                &nbsp;&nbsp;confirmed: boolean, &nbsp;&nbsp;// 是否确认重置对话轮次<br>
+                &nbsp;&nbsp;reason?: string &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// 可选的确认原因<br>
+                }
+            </div>
+
+            <!-- 场景1: 触发对话轮次确认 -->
+            <div class="section">
+                <h3>场景 1: 触发对话轮次确认</h3>
+                <p>发送包含关键词的消息，触发服务器返回 TurnConfirmationRequest</p>
+                
+                <div class="input-group">
+                    <label>消息内容：</label>
+                    <input type="text" id="triggerMessage" value="重置对话" placeholder="输入包含'重置对话'、'开始新对话'或'clear'的消息">
+                </div>
+
+                <div class="button-group">
+                    <button class="btn-primary" onclick="triggerTurnConfirmation()">发送消息</button>
+                    <button class="btn-secondary" onclick="clearOutput()">清空输出</button>
+                </div>
+
+                <div class="example-buttons">
+                    <button onclick="setTriggerMessage('重置对话')">重置对话</button>
+                    <button onclick="setTriggerMessage('开始新对话')">开始新对话</button>
+                    <button onclick="setTriggerMessage('clear')">clear</button>
+                    <button onclick="setTriggerMessage('普通消息')">普通消息</button>
+                </div>
+            </div>
+
+            <!-- 场景2: 发送确认响应 -->
+            <div class="section">
+                <h3>场景 2: 发送确认响应</h3>
+                <p>对收到的对话轮次确认请求进行确认或拒绝</p>
+                
+                <div class="input-group">
+                    <label>请求 ID：</label>
+                    <input type="text" id="confirmRequestId" placeholder="自动填充，或手动输入">
+                </div>
+
+                <div class="input-group">
+                    <label>确认原因（可选）：</label>
+                    <input type="text" id="confirmReason" placeholder="例如：用户确认继续对话">
+                </div>
+
+                <div class="button-group">
+                    <button class="btn-success" onclick="sendTurnConfirmation(true)">✅ 确认继续</button>
+                    <button class="btn-danger" onclick="sendTurnConfirmation(false)">❌ 拒绝重置</button>
+                </div>
+            </div>
+
+            <!-- 场景3: 工具确认（兼容性测试） -->
+            <div class="section">
+                <h3>场景 3: 工具确认（兼容性测试）</h3>
+                <p>测试原有的工具确认功能是否正常工作</p>
+                
+                <div class="input-group">
+                    <label>工具名称：</label>
+                    <input type="text" id="toolName" value="search_web" placeholder="工具名称">
+                </div>
+
+                <div class="input-group">
+                    <label>参数（JSON）：</label>
+                    <textarea id="toolArgs" placeholder='{"query": "天气预报"}'>{"query": "天气预报"}</textarea>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn-success" onclick="sendToolConfirmation(true)">批准工具</button>
+                    <button class="btn-danger" onclick="sendToolConfirmation(false)">拒绝工具</button>
+                </div>
+            </div>
+
+            <!-- 输出区域 -->
+            <div class="section">
+                <h3>输出日志</h3>
+                <div class="output" id="output">等待操作...</div>
+            </div>
+
+            <!-- 测试说明 -->
+            <div class="section">
+                <h3>测试流程说明</h3>
+                <p><strong>完整测试步骤：</strong></p>
+                <ol style="margin-left: 20px; color: #666; font-size: 14px; line-height: 1.8;">
+                    <li>点击"连接"按钮连接到测试服务器</li>
+                    <li>在场景1中发送包含"重置对话"的消息，观察是否收到确认请求</li>
+                    <li>在场景2中使用收到的请求ID发送确认或拒绝</li>
+                    <li>观察服务器返回的响应和对话轮次状态变化</li>
+                    <li>测试工具确认功能确保兼容性</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isConnected = false;
+        let currentRequestId = null;
+        let serverUrl = 'http://localhost:8080';
+
+        function log(message, type = 'info') {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            const colorClass = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info';
+            
+            output.innerHTML += `[${timestamp}] <span class="${colorClass}">${message}</span>\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+        }
+
+        function updateConnectionStatus(connected, connecting = false) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            
+            if (connecting) {
+                dot.className = 'status-dot connecting';
+                text.textContent = '连接中...';
+            } else if (connected) {
+                dot.className = 'status-dot connected';
+                text.textContent = '已连接';
+                isConnected = true;
+            } else {
+                dot.className = 'status-dot';
+                text.textContent = '未连接';
+                isConnected = false;
+            }
+        }
+
+        async function connectServer() {
+            updateConnectionStatus(false, true);
+            log('正在连接服务器...', 'info');
+            
+            try {
+                const response = await fetch(`${serverUrl}/api/health`);
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    updateConnectionStatus(true);
+                    log(`✅ 连接成功！服务器健康状态正常，待确认请求: ${data.pendingConfirmations}`, 'success');
+                } else {
+                    throw new Error('服务器返回异常状态');
+                }
+            } catch (error) {
+                updateConnectionStatus(false);
+                log(`❌ 连接失败: ${error.message}`, 'error');
+                log('请确保 test-turn-confirmation-server.mjs 正在运行: node test-turn-confirmation-server.mjs', 'warning');
+            }
+        }
+
+        function setTriggerMessage(message) {
+            document.getElementById('triggerMessage').value = message;
+        }
+
+        async function triggerTurnConfirmation() {
+            if (!isConnected) {
+                log('❌ 请先连接服务器', 'error');
+                return;
+            }
+
+            const message = document.getElementById('triggerMessage').value;
+            if (!message) {
+                log('❌ 请输入消息内容', 'error');
+                return;
+            }
+
+            log(`📤 发送消息: "${message}"`, 'info');
+
+            try {
+                const response = await fetch(`${serverUrl}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'text',
+                        content: message
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.response.TurnConfirmationRequest) {
+                    const req = data.response.TurnConfirmationRequest;
+                    currentRequestId = req.requestId;
+                    document.getElementById('confirmRequestId').value = req.requestId;
+                    
+                    log(`🔄 收到对话轮次确认请求:`, 'warning');
+                    log(`   请求ID: ${req.requestId}`, 'warning');
+                    log(`   消息: ${req.message}`, 'warning');
+                    log(`   描述: ${req.description}`, 'warning');
+                    log(`   状态: 待确认`, 'warning');
+                } else if (data.response.Text) {
+                    log(`💬 普通响应: ${data.response.Text}`, 'success');
+                }
+            } catch (error) {
+                log(`❌ 发送失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function sendTurnConfirmation(confirmed) {
+            if (!isConnected) {
+                log('❌ 请先连接服务器', 'error');
+                return;
+            }
+
+            const requestId = document.getElementById('confirmRequestId').value;
+            const reason = document.getElementById('confirmReason').value;
+
+            if (!requestId) {
+                log('❌ 请输入请求ID', 'error');
+                return;
+            }
+
+            const action = confirmed ? '确认' : '拒绝';
+            const reasonText = reason || (confirmed ? '用户确认继续对话' : '用户拒绝重置');
+            
+            log(`📤 发送对话轮次${action}响应:`, 'info');
+            log(`   请求ID: ${requestId}`, 'info');
+            log(`   确认: ${confirmed}`, 'info');
+            log(`   原因: ${reasonText}`, 'info');
+
+            try {
+                const response = await fetch(`${serverUrl}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'turn_confirmation_response',
+                        requestId: requestId,
+                        confirmed: confirmed,
+                        reason: reasonText
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.response.Text) {
+                    log(`✅ 服务器响应: ${data.response.Text}`, 'success');
+                    log(`   对话轮次状态: ${confirmed ? '已确认重置' : '已取消重置'}`, 'info');
+                } else if (data.error) {
+                    log(`❌ 错误: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ 发送失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function sendToolConfirmation(approved) {
+            if (!isConnected) {
+                log('❌ 请先连接服务器', 'error');
+                return;
+            }
+
+            const name = document.getElementById('toolName').value;
+            const argsText = document.getElementById('toolArgs').value;
+            
+            let args;
+            try {
+                args = JSON.parse(argsText);
+            } catch {
+                log('❌ 参数必须是有效的JSON格式', 'error');
+                return;
+            }
+
+            const requestId = `tool_${Date.now()}`;
+            const reason = approved ? '用户批准工具执行' : '用户拒绝工具执行';
+
+            log(`📤 发送工具确认${approved ? '批准' : '拒绝'}:`, 'info');
+            log(`   请求ID: ${requestId}`, 'info');
+            log(`   工具: ${name}`, 'info');
+            log(`   参数: ${JSON.stringify(args)}`, 'info');
+            log(`   原因: ${reason}`, 'info');
+
+            try {
+                const response = await fetch(`${serverUrl}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'tool_confirmation_response',
+                        requestId: requestId,
+                        name: name,
+                        arguments: args,
+                        approved: approved,
+                        reason: reason
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.response.Text) {
+                    log(`✅ 服务器响应: ${data.response.Text}`, 'success');
+                } else if (data.error) {
+                    log(`❌ 错误: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ 发送失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载时自动尝试连接
+        window.addEventListener('load', () => {
+            log('🧪 对话轮次确认协议测试工具已就绪', 'info');
+            log('请先启动测试服务器: node test-turn-confirmation-server.mjs', 'warning');
+        });
+    </script>
+</body>
+</html>
