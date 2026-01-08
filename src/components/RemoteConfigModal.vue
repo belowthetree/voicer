@@ -77,6 +77,39 @@ const saveRemoteConfig = () => {
 const closeModal = () => {
   emit('update:show', false)
 }
+
+// 响应式样式计算
+const modalStyle = computed(() => {
+  // 在移动设备上使用更宽的宽度
+  if (window.innerWidth <= 768) {
+    return { width: '90%', maxWidth: '500px' }
+  }
+  return { width: '500px' }
+})
+
+const labelWidth = computed(() => {
+  // 在移动设备上使用更小的标签宽度
+  if (window.innerWidth <= 768) {
+    return '100px'
+  }
+  return '120px'
+})
+
+const gridCols = computed(() => {
+  // 在移动设备上使用单列布局
+  if (window.innerWidth <= 768) {
+    return 1
+  }
+  return 2
+})
+
+const gridSpan = computed(() => {
+  // 在移动设备上每个项目占满整行
+  if (window.innerWidth <= 768) {
+    return 1
+  }
+  return 1 // 在桌面端，每个项目占1列（共2列）
+})
 </script>
 
 <template>
@@ -84,17 +117,17 @@ const closeModal = () => {
     v-model:show="localShow" 
     preset="card" 
     title="远程服务器配置" 
-    style="width: 500px"
+    :style="modalStyle"
     @update:show="closeModal"
   >
-    <NForm label-placement="left" label-width="120px">
-      <NGrid :cols="2" :x-gap="24">
-        <NGi>
+    <NForm label-placement="left" :label-width="labelWidth">
+      <NGrid :cols="gridCols" :x-gap="24">
+        <NGi :span="gridSpan">
           <NFormItem label="服务器地址">
             <NInput v-model:value="remoteHost" placeholder="例如: 127.0.0.1" />
           </NFormItem>
         </NGi>
-        <NGi>
+        <NGi :span="gridSpan">
           <NFormItem label="端口号">
             <NInputNumber v-model:value="remotePort" :min="1" :max="65535" />
           </NFormItem>
