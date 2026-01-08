@@ -219,6 +219,31 @@ const openAbout = () => {
 @media (max-width: 768px) {
   .chat-toolbar {
     padding: 8px 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .toolbar-left,
+  .toolbar-center,
+  .toolbar-right {
+    flex: 1 1 auto;
+  }
+  
+  .toolbar-left {
+    order: 1;
+    justify-content: flex-start;
+  }
+  
+  .toolbar-center {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: center;
+    margin-top: 8px;
+  }
+  
+  .toolbar-right {
+    order: 2;
+    justify-content: flex-end;
   }
   
   .title-text {
@@ -226,8 +251,45 @@ const openAbout = () => {
   }
   
   .remote-status {
-    flex-direction: column;
+    flex-direction: row;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  
+  .app-title {
+    gap: 6px;
+  }
+  
+  .app-title .n-tag {
+    display: none; /* 在移动端隐藏版本标签以节省空间 */
+  }
+  
+  .toolbar-right .n-space {
+    gap: 4px !important;
+  }
+  
+  .toolbar-right .n-divider {
+    display: none; /* 在移动端隐藏分隔线以节省空间 */
+  }
+}
+
+/* 超小屏幕适配 */
+@media (max-width: 480px) {
+  .chat-toolbar {
     gap: 4px;
+  }
+  
+  .toolbar-center {
+    margin-top: 4px;
+  }
+  
+  .remote-status {
+    gap: 4px;
+  }
+  
+  .app-title .n-avatar {
+    display: none; /* 在超小屏幕隐藏头像 */
   }
 }
 </style>
